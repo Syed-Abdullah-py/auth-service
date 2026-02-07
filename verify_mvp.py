@@ -53,7 +53,7 @@ def run_verification():
         
         # 5. Register Doctor
         print(f"\n5️⃣  Registering Doctor ({doctor_email})...")
-        resp = client.post("/auth/register", json={"email": doctor_email, "password": password})
+        resp = client.post("/auth/register", json={"email": doctor_email, "password": password, "name": "Dr. House"})
         if resp.status_code != 200:
             print(f"❌ Failed to register doctor: {resp.text}")
             return

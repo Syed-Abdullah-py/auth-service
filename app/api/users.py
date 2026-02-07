@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends
 from app.api.deps import require_role
-from app.models.models import RoleEnum
+from app.models.models import WorkspaceRoleEnum
 
 router = APIRouter()
 
 # Owner / Admin only
 @router.post("/users")
 async def create_user_protected(
-    role: RoleEnum = Depends(require_role(RoleEnum.OWNER, RoleEnum.ADMIN))
+    role: WorkspaceRoleEnum = Depends(require_role(WorkspaceRoleEnum.OWNER, WorkspaceRoleEnum.ADMIN))
 ):
     return {"message": "User created successfully", "performed_by_role": role}
 
@@ -15,6 +15,6 @@ async def create_user_protected(
 # Requirement said: OWNER, ADMIN, DOCTOR for list_patients
 @router.get("/patients")
 async def list_patients(
-    role: RoleEnum = Depends(require_role(RoleEnum.OWNER, RoleEnum.ADMIN, RoleEnum.DOCTOR))
+    role: WorkspaceRoleEnum = Depends(require_role(WorkspaceRoleEnum.OWNER, WorkspaceRoleEnum.ADMIN, WorkspaceRoleEnum.DOCTOR))
 ):
     return {"message": "List of patients", "performed_by_role": role}

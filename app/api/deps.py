@@ -5,7 +5,7 @@ from jose import jwt, JWTError
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.core.security import SECRET_KEY, ALGORITHM
-from app.models.models import User, WorkspaceMembership, RoleEnum
+from app.models.models import User, WorkspaceMember, WorkspaceRoleEnum
 from app.schemas.schemas import TokenData
 
 # Helper to get the database session
@@ -30,7 +30,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         email: str = payload.get("email")
         if user_id is None:
             raise credentials_exception
-        token_data = TokenData(user_id=int(user_id), email=email)
+        token_data = TokenData(user_id=user_id, email=email)
     except JWTError:
         raise credentials_exception
         
@@ -42,26 +42,23 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 # Helper to get workspace_id from header
 def get_workspace_id(
     x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-Id")
-) -> Optional[int]:
+) -> Optional[str]:
     if x_workspace_id:
-        try:
-            return int(x_workspace_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid X-Workspace-Id header")
+        return x_workspace_id
     return None
 
 # Helper to get workspace role
 def get_workspace_role(
     user: User = Depends(get_current_user),
-    workspace_id: Optional[int] = Depends(get_workspace_id),
+    workspace_id: Optional[str] = Depends(get_workspace_id),
     db: Session = Depends(get_db),
-) -> RoleEnum:
+) -> WorkspaceRoleEnum:
     if not workspace_id:
          raise HTTPException(status_code=400, detail="X-Workspace-Id header is required")
 
-    membership = db.query(WorkspaceMembership).filter(
-        WorkspaceMembership.user_id == user.id,
-        WorkspaceMembership.workspace_id == workspace_id
+    membership = db.query(WorkspaceMember).filter(
+        WorkspaceMember.user_id == user.id,
+        WorkspaceMember.workspace_id == workspace_id
     ).first()
 
     if not membership:
@@ -71,7 +68,7 @@ def get_workspace_role(
 
 # Dependency factory for role requirements
 def require_role(*allowed_roles: str):
-    def checker(role: RoleEnum = Depends(get_workspace_role)):
+    def checker(role: WorkspaceRoleEnum = Depends(get_workspace_role)):
         if role not in allowed_roles:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         return role
