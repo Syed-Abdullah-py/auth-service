@@ -2,8 +2,10 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+import os
 
-SECRET_KEY = "YOUR_SUPER_SECRET_KEY" # In production, use env var
+# MUST match AUTH_SECRET in frontend/.env exactly
+SECRET_KEY = "super_secret_random_string_at_least_32_chars"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
