@@ -56,6 +56,9 @@ class WorkspaceBase(BaseModel):
 class WorkspaceCreate(WorkspaceBase):
     slug: Optional[str] = None
 
+class WorkspaceUpdate(BaseModel):
+    name: Optional[str] = None
+
 class WorkspaceResponse(WorkspaceBase):
     id: str
     slug: str
@@ -66,12 +69,14 @@ class WorkspaceResponse(WorkspaceBase):
         from_attributes = True
 
 # Membership Schemas
+# Membership Schemas
 class MembershipResponse(BaseModel):
     id: str
     workspace_id: str
     role: WorkspaceRoleEnum
     joined_at: datetime
     workspace_name: Optional[str] = None # Enriched field
+    user: Optional[UserResponse] = None # Enriched field
     
     class Config:
         from_attributes = True
@@ -91,10 +96,22 @@ class PatientBase(BaseModel):
 class PatientCreate(PatientBase):
     pass
 
+class PatientUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    dob: Optional[datetime] = None
+    gender: Optional[str] = None
+    phone_number: Optional[str] = None
+    mrn: Optional[str] = None
+    cnic: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+
 class PatientResponse(PatientBase):
     id: str
     workspace_id: str
     created_at: datetime
+    updated_at: datetime
     
     class Config:
         from_attributes = True
@@ -109,12 +126,59 @@ class CaseBase(BaseModel):
 class CaseCreate(CaseBase):
     patient_id: str
 
+class CaseUpdate(BaseModel):
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    file_references: Optional[str] = None
+    notes: Optional[str] = None
+    verdict: Optional[str] = None
+    assigned_to_member_id: Optional[str] = None
+
 class CaseResponse(CaseBase):
     id: str
     patient_id: str
     assigned_to_member_id: Optional[str] = None
     verdict: Optional[str] = None
+    verdict_updated_at: Optional[datetime] = None
     created_at: datetime
+    updated_at: datetime
     
+    class Config:
+        from_attributes = True
+
+# Invitation Schemas
+class InvitationBase(BaseModel):
+    email: EmailStr
+    role: WorkspaceRoleEnum
+
+class InvitationCreate(InvitationBase):
+    pass
+
+class InvitationResponse(InvitationBase):
+    id: str
+    workspace_id: str
+    token: str
+    expires_at: datetime
+    workspace_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+# Join Request Schemas
+class JoinRequestBase(BaseModel):
+    pass
+
+class JoinRequestCreate(JoinRequestBase):
+    workspace_id: str
+
+class JoinRequestResponse(JoinRequestBase):
+    id: str
+    workspace_id: str
+    user_id: str
+    status: str
+    created_at: datetime
+    user: Optional[UserResponse] = None
+    workspace_name: Optional[str] = None
+
     class Config:
         from_attributes = True
