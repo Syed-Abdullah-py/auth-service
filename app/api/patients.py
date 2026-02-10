@@ -27,16 +27,24 @@ def get_patients(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    print(f"[Patients API] get_patients called with workspace_id: {workspace_id}")
+    print(f"[Patients API] current_user: {current_user.email}")
+    
     if not workspace_id:
+        print("[Patients API] No workspace_id, returning empty list")
         return []
 
     member = get_member_in_workspace(db, current_user.id, workspace_id)
+    print(f"[Patients API] member found: {member is not None}")
+    
     if not member:
          raise HTTPException(status_code=403, detail="Not a member of this workspace")
 
     patients = db.query(Patient).filter(
         Patient.workspace_id == workspace_id
     ).order_by(Patient.updated_at.desc()).offset(skip).limit(limit).all()
+    
+    print(f"[Patients API] Found {len(patients)} patients")
 
     return patients
 
@@ -58,6 +66,9 @@ def create_patient(
         **patient_in.dict(),
         workspace_id=workspace_id
     )
+
+    if member.role not in ["OWNER", "ADMIN"]:
+        raise HTTPException(status_code=403, detail="Only Admins or Owners can create patients")
     
     db.add(db_patient)
     db.commit()
@@ -94,6 +105,10 @@ def update_patient(
         
     if workspace_id and patient.workspace_id != workspace_id:
          raise HTTPException(status_code=403, detail="Access denied")
+
+    member = get_member_in_workspace(db, current_user.id, patient.workspace_id)
+    if not member or member.role not in ["OWNER", "ADMIN"]:
+        raise HTTPException(status_code=403, detail="Only Admins or Owners can update patients")
          
     update_data = patient_in.dict(exclude_unset=True)
     for field, value in update_data.items():
@@ -116,6 +131,10 @@ def delete_patient(
 
     if workspace_id and patient.workspace_id != workspace_id:
          raise HTTPException(status_code=403, detail="Access denied")
+
+    member = get_member_in_workspace(db, current_user.id, patient.workspace_id)
+    if not member or member.role not in ["OWNER", "ADMIN"]:
+        raise HTTPException(status_code=403, detail="Only Admins or Owners can delete patients")
          
     db.delete(patient)
     db.commit()

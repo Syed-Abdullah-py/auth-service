@@ -67,6 +67,9 @@ def create_case(
     if not member:
         raise HTTPException(status_code=403, detail="Not a member of this workspace")
 
+    if member.role not in ["OWNER", "ADMIN"]:
+        raise HTTPException(status_code=403, detail="Only Admins or Owners can create cases")
+
     # Verify patient belongs to workspace
     patient = db.query(Patient).filter(Patient.id == case_in.patient_id, Patient.workspace_id == workspace_id).first()
     if not patient:
@@ -188,7 +191,23 @@ def update_case(
     if workspace_id and case.patient.workspace_id != workspace_id:
          raise HTTPException(status_code=403, detail="Access denied")
 
+    member = get_member_in_workspace(db, current_user.id, case.patient.workspace_id)
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member")
+
     update_data = case_in.dict(exclude_unset=True)
+
+    if member.role == "DOCTOR":
+        # Doctors can only update their assigned cases and only specific fields
+        if case.assigned_to_member_id != member.id:
+             raise HTTPException(status_code=403, detail="Doctors can only update assigned cases")
+        
+        allowed_fields = {"verdict", "notes", "status"}
+        for field in update_data.keys():
+            if field not in allowed_fields:
+                raise HTTPException(status_code=403, detail=f"Doctors cannot update field: {field}")
+    elif member.role not in ["OWNER", "ADMIN"]:
+         raise HTTPException(status_code=403, detail="Insufficient permissions")
     
     # If verdict is being updated, set verdict_updated_at
     if "verdict" in update_data:
@@ -215,6 +234,10 @@ def delete_case(
     # Verify access
     if workspace_id and case.patient.workspace_id != workspace_id:
          raise HTTPException(status_code=403, detail="Access denied")
+
+    member = get_member_in_workspace(db, current_user.id, case.patient.workspace_id)
+    if not member or member.role not in ["OWNER", "ADMIN"]:
+         raise HTTPException(status_code=403, detail="Only Admins or Owners can delete cases")
          
     db.delete(case)
     db.commit()
