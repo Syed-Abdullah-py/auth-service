@@ -23,6 +23,7 @@ def get_member_in_workspace(db: Session, user_id: str, workspace_id: str):
 def get_patients(
     skip: int = 0,
     limit: int = 100,
+    phone_number: Optional[str] = None,
     workspace_id: Optional[str] = Header(None, alias="X-Workspace-Id"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -40,9 +41,15 @@ def get_patients(
     if not member:
          raise HTTPException(status_code=403, detail="Not a member of this workspace")
 
-    patients = db.query(Patient).filter(
+    patients_query = db.query(Patient).filter(
         Patient.workspace_id == workspace_id
-    ).order_by(Patient.updated_at.desc()).offset(skip).limit(limit).all()
+    )
+
+    if phone_number:
+        # Simple exact match for now. In production, we might want to normalize.
+        patients_query = patients_query.filter(Patient.phone_number == phone_number)
+
+    patients = patients_query.order_by(Patient.updated_at.desc()).offset(skip).limit(limit).all()
     
     print(f"[Patients API] Found {len(patients)} patients")
 

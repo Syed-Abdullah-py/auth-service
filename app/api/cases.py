@@ -50,7 +50,6 @@ def get_cases(
             query = query.filter(Case.assigned_to_member_id == assigned_to)
 
     cases = query.order_by(Case.created_at.desc()).offset(skip).limit(limit).all()
-
     return cases
 
 @router.post("/cases", response_model=CaseResponse)

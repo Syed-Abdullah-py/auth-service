@@ -201,18 +201,21 @@ def remove_member(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Verify permission: Admin or Owner can remove members
+    # Find the requester's membership
     requester_membership = db.query(WorkspaceMember).filter(
         WorkspaceMember.user_id == current_user.id,
         WorkspaceMember.workspace_id == workspace_id
     ).first()
     
-    if not requester_membership or requester_membership.role not in [WorkspaceRoleEnum.OWNER, WorkspaceRoleEnum.ADMIN]:
-        raise HTTPException(status_code=403, detail="Only OWNER or ADMIN can remove members")
-        
-    # Cannot remove self? Or strictly "The admin can add or remove members"
-    # Usually you can leave (remove self).
-    # But importantly: Admin cannot remove Owner.
+    if not requester_membership:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+
+    is_self_removal = current_user.id == user_id
+
+    # If removing someone else, require OWNER or ADMIN role
+    if not is_self_removal:
+        if requester_membership.role not in [WorkspaceRoleEnum.OWNER, WorkspaceRoleEnum.ADMIN]:
+            raise HTTPException(status_code=403, detail="Only OWNER or ADMIN can remove members")
     
     target_membership = db.query(WorkspaceMember).filter(
         WorkspaceMember.user_id == user_id,
@@ -222,16 +225,13 @@ def remove_member(
     if not target_membership:
         raise HTTPException(status_code=404, detail="Member not found")
         
+    # Owners cannot be removed (including by themselves — to prevent orphaned workspaces)
     if target_membership.role == WorkspaceRoleEnum.OWNER:
-         raise HTTPException(status_code=403, detail="Cannot remove the Workspace Owner")
+         raise HTTPException(status_code=403, detail="Cannot remove the Workspace Owner. Transfer ownership first.")
          
-    # If requester is ADMIN, they cannot remove another ADMIN (optional rule, but safer)
-    # Requirement: "The admin can add or remove members". Doesn't specify restrictions.
-    # Let's assume Owner > Admin > Regular.
-    
-    if requester_membership.role == WorkspaceRoleEnum.ADMIN and target_membership.role == WorkspaceRoleEnum.ADMIN:
-         # Optional: prevent admin wars. Allowing for now based on simple reqs.
-         pass
+    # If requester is ADMIN, they cannot remove another ADMIN
+    if not is_self_removal and requester_membership.role == WorkspaceRoleEnum.ADMIN and target_membership.role == WorkspaceRoleEnum.ADMIN:
+         raise HTTPException(status_code=403, detail="Admins cannot remove other Admins")
 
     # 2. Perform Removal
     print(f"[Auth] Removing member {user_id} from workspace {workspace_id}")

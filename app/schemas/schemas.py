@@ -44,10 +44,18 @@ class UserResponse(UserBase):
     id: str
     global_role: Optional[str] = None
     avatar_url: Optional[str] = None
+    is_verified: bool
     created_at: datetime
     
     class Config:
         from_attributes = True
+
+class VerifyOtpRequest(BaseModel):
+    email: EmailStr
+    otp: str
+
+class ResendOtpRequest(BaseModel):
+    email: EmailStr
 
 # Workspace Schemas
 class WorkspaceBase(BaseModel):
@@ -125,6 +133,7 @@ class CaseBase(BaseModel):
 
 class CaseCreate(CaseBase):
     patient_id: str
+    assigned_to_member_id: Optional[str] = None
 
 class CaseUpdate(BaseModel):
     status: Optional[str] = None
@@ -142,6 +151,7 @@ class CaseResponse(CaseBase):
     verdict_updated_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    patient: Optional[PatientResponse] = None
     
     class Config:
         from_attributes = True

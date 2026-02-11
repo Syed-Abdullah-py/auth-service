@@ -50,6 +50,10 @@ class User(Base):
     gender = Column(String, nullable=True)
     terms_accepted = Column(Boolean, default=False)
 
+    # Verification
+    is_verified = Column(Boolean, default=False)
+    verification_otp = Column(String, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -57,6 +61,18 @@ class User(Base):
     memberships = relationship("WorkspaceMember", back_populates="user", cascade="all, delete-orphan")
     owned_workspaces = relationship("Workspace", back_populates="owner")
     join_requests = relationship("JoinRequest", back_populates="user")
+
+
+class PendingUser(Base):
+    __tablename__ = "pending_users"
+
+    id = Column(String, primary_key=True, default=generate_id)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    name = Column(String, nullable=True)
+    global_role = Column(String, nullable=True)
+    verification_otp = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Workspace(Base):
