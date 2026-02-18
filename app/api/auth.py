@@ -130,10 +130,6 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
     
     access_token_expires = timedelta(minutes=30)
     
-    # Debug: Print first 10 chars of SECRET_KEY
-    from app.core.security import SECRET_KEY
-    print(f"[Auth-Service] Using SECRET_KEY: {SECRET_KEY[:10]}...")
-    
     access_token = create_access_token(
         data={
             "sub": user.id, 

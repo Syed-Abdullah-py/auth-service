@@ -39,7 +39,8 @@ def get_patients(
     print(f"[Patients API] member found: {member is not None}")
     
     if not member:
-         raise HTTPException(status_code=403, detail="Not a member of this workspace")
+        print(f"[Patients API] 403: User {current_user.id} is not a member of workspace {workspace_id}")
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
 
     patients_query = db.query(Patient).filter(
         Patient.workspace_id == workspace_id
@@ -67,6 +68,7 @@ def create_patient(
 
     member = get_member_in_workspace(db, current_user.id, workspace_id)
     if not member:
+        print(f"[Patients API] Create: User {current_user.id} not in workspace {workspace_id}")
         raise HTTPException(status_code=403, detail="Not a member of this workspace")
 
     db_patient = Patient(
@@ -74,8 +76,10 @@ def create_patient(
         workspace_id=workspace_id
     )
 
-    if member.role not in ["OWNER", "ADMIN"]:
-        raise HTTPException(status_code=403, detail="Only Admins or Owners can create patients")
+    # Allow DOCTOR, ADMIN, OWNER
+    if member.role not in ["OWNER", "ADMIN", "DOCTOR"]:
+        print(f"[Patients API] Create: Role {member.role} not allowed")
+        raise HTTPException(status_code=403, detail="Only Team Members can create patients")
     
     db.add(db_patient)
     db.commit()
@@ -114,8 +118,9 @@ def update_patient(
          raise HTTPException(status_code=403, detail="Access denied")
 
     member = get_member_in_workspace(db, current_user.id, patient.workspace_id)
-    if not member or member.role not in ["OWNER", "ADMIN"]:
-        raise HTTPException(status_code=403, detail="Only Admins or Owners can update patients")
+    # Allow DOCTOR, ADMIN, OWNER
+    if not member or member.role not in ["OWNER", "ADMIN", "DOCTOR"]:
+        raise HTTPException(status_code=403, detail="Only Team Members can update patients")
          
     update_data = patient_in.dict(exclude_unset=True)
     for field, value in update_data.items():

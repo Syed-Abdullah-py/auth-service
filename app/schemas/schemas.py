@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List, Any
+from typing import Optional
 from datetime import datetime
 from enum import Enum
 
@@ -159,7 +159,8 @@ class CaseResponse(CaseBase):
 # Invitation Schemas
 class InvitationBase(BaseModel):
     email: EmailStr
-    role: WorkspaceRoleEnum
+    # role: WorkspaceRoleEnum  <-- Removed, derived from global role on acceptance
+
 
 class InvitationCreate(InvitationBase):
     pass
@@ -180,6 +181,9 @@ class JoinRequestBase(BaseModel):
 
 class JoinRequestCreate(JoinRequestBase):
     workspace_id: str
+
+class JoinRequestApprove(BaseModel):
+    pass
 
 class JoinRequestResponse(JoinRequestBase):
     id: str

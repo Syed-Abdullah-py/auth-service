@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import uuid
 
 from app.models.models import User, Workspace, WorkspaceMember, WorkspaceRoleEnum, Invitation, JoinRequest, Case
-from app.schemas.schemas import WorkspaceCreate, WorkspaceResponse, MembershipResponse, WorkspaceUpdate, InvitationCreate, InvitationResponse, JoinRequestCreate, JoinRequestResponse
+from app.schemas.schemas import WorkspaceCreate, WorkspaceResponse, MembershipResponse, WorkspaceUpdate, InvitationCreate, InvitationResponse, JoinRequestCreate, JoinRequestResponse, JoinRequestApprove
 from app.api.deps import get_db, get_current_user
 
 router = APIRouter()
@@ -323,9 +323,13 @@ def create_invitation(
     token = str(uuid.uuid4())
     expires_at = datetime.utcnow() + timedelta(days=7)
     
+    # Role in DB is technically required by model but not used for logic anymore.
+    # We can default it to DOCTOR or something harmless, or the model definition might need change if we want it nullable.
+    # For now, let's default to DOCTOR to satisfy DB constraint if it exists.
+    
     db_invitation = Invitation(
         email=invitation_in.email,
-        role=invitation_in.role,
+        role=WorkspaceRoleEnum.DOCTOR, # Placeholder, actual role derived on acceptance
         token=token,
         expires_at=expires_at,
         workspace_id=workspace_id
@@ -380,7 +384,9 @@ def accept_invitation(
     if not invitation:
         raise HTTPException(status_code=404, detail="Invitation not found")
         
-    if invitation.email != current_user.email:
+    # Case-insensitive comparison
+    if invitation.email.lower() != current_user.email.lower():
+        print(f"Invitation email mismatch: {invitation.email} vs {current_user.email}")
         raise HTTPException(status_code=403, detail="Invitation does not belong to you")
         
     if invitation.expires_at < datetime.utcnow():
@@ -399,11 +405,16 @@ def accept_invitation(
         db.commit()
         return {"message": "Already a member"}
 
+    # Determine Role based on Global Role
+    new_role = WorkspaceRoleEnum.DOCTOR
+    if current_user.global_role == "ADMIN":
+        new_role = WorkspaceRoleEnum.ADMIN
+
     # Add member
     new_membership = WorkspaceMember(
         user_id=current_user.id,
         workspace_id=invitation.workspace_id,
-        role=invitation.role
+        role=new_role
     )
     db.add(new_membership)
     db.delete(invitation)
@@ -511,6 +522,7 @@ def get_workspace_join_requests(
 @router.post("/join-requests/{request_id}/approve", status_code=status.HTTP_200_OK)
 def approve_join_request(
     request_id: str,
+    approval_data: JoinRequestApprove,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -530,11 +542,21 @@ def approve_join_request(
     # 3. Approve
     request.status = "APPROVED"
     
+    # 4. Determine Role based on Global Role
+    # Fetch the user joining
+    joining_user = db.query(User).filter(User.id == request.user_id).first()
+    if not joining_user:
+         raise HTTPException(status_code=404, detail="User not found")
+         
+    new_role = WorkspaceRoleEnum.DOCTOR
+    if joining_user.global_role == "ADMIN":
+        new_role = WorkspaceRoleEnum.ADMIN
+    
     # 4. Add Member
     new_member = WorkspaceMember(
         user_id=request.user_id,
         workspace_id=request.workspace_id,
-        role=WorkspaceRoleEnum.DOCTOR # Default role for join requests
+        role=new_role
     )
     db.add(new_member)
     db.commit()

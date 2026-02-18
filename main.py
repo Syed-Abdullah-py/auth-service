@@ -22,4 +22,4 @@ app.include_router(files.router, tags=["files"])
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the Auth Service"}
+    return {"message": "Welcome to the Neuroscan Auth Service Backend"}
