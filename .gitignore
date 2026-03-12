@@ -6,3 +6,5 @@ __pycache__/
 test.db
 uploads
 .gitignore
+.venv
+.gitignore
