@@ -1,9 +1,14 @@
+# app/domains/auth/service.py
 import logging
 import random
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.security import get_password_hash, verify_password, create_access_token
+from app.core.security import (
+    get_password_hash_async,
+    verify_password_async,
+    create_access_token,
+)
 from app.domains.auth.schemas import (
     RegisterRequest,
     RegisterResponse,
@@ -24,21 +29,35 @@ def _send_otp(email: str, otp: str) -> None:
 
 
 async def register(db: AsyncSession, payload: RegisterRequest) -> RegisterResponse:
+    import time
+    t0 = time.time()
+    
+    # 1. Check existing user
+    t_start = time.time()
     result = await db.execute(select(User).where(User.email == payload.email))
     if result.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An account with this email already exists.",
         )
+    print(f"[DEBUG] DB Check existing user: {time.time() - t_start:.4f}s")
 
-    hashed = get_password_hash(payload.password)
+    # 2. Hash password
+    t_start = time.time()
+    hashed = await get_password_hash_async(payload.password)
+    print(f"[DEBUG] Password Hashing: {time.time() - t_start:.4f}s")
+
     otp = _generate_otp()
 
+    # 3. Check pending user
+    t_start = time.time()
     result = await db.execute(
         select(PendingUser).where(PendingUser.email == payload.email)
     )
     pending = result.scalar_one_or_none()
+    print(f"[DEBUG] DB Check pending user: {time.time() - t_start:.4f}s")
 
+    t_start = time.time()
     if pending:
         pending.hashed_password = hashed
         pending.name = payload.name
@@ -54,10 +73,14 @@ async def register(db: AsyncSession, payload: RegisterRequest) -> RegisterRespon
         )
         db.add(pending)
 
+    # 4. Commit and Refresh
     await db.commit()
     await db.refresh(pending)
+    print(f"[DEBUG] DB Commit & Refresh: {time.time() - t_start:.4f}s")
+    
     _send_otp(pending.email, otp)
 
+    print(f"[DEBUG] TOTAL Register Time: {time.time() - t0:.4f}s")
     return RegisterResponse(
         id=pending.id,
         email=pending.email,
@@ -68,10 +91,15 @@ async def register(db: AsyncSession, payload: RegisterRequest) -> RegisterRespon
 
 
 async def verify_otp(db: AsyncSession, payload: VerifyOtpRequest) -> TokenResponse:
+    import time
+    t0 = time.time()
+    
+    t_start = time.time()
     result = await db.execute(
         select(PendingUser).where(PendingUser.email == payload.email)
     )
     pending = result.scalar_one_or_none()
+    print(f"[DEBUG] verify_otp - DB Fetch: {time.time() - t_start:.4f}s")
 
     if not pending:
         raise HTTPException(
@@ -84,6 +112,7 @@ async def verify_otp(db: AsyncSession, payload: VerifyOtpRequest) -> TokenRespon
             detail="Invalid OTP. Please try again.",
         )
 
+    t_start = time.time()
     user = User(
         email=pending.email,
         hashed_password=pending.hashed_password,
@@ -95,10 +124,15 @@ async def verify_otp(db: AsyncSession, payload: VerifyOtpRequest) -> TokenRespon
     await db.delete(pending)
     await db.commit()
     await db.refresh(user)
+    print(f"[DEBUG] verify_otp - DB Commit & Refresh: {time.time() - t_start:.4f}s")
 
+    t_start = time.time()
     token = create_access_token(
         data={"sub": user.id, "email": user.email, "global_role": user.global_role}
     )
+    print(f"[DEBUG] verify_otp - Token generation: {time.time() - t_start:.4f}s")
+    
+    print(f"[DEBUG] TOTAL verify_otp Time: {time.time() - t0:.4f}s")
     return TokenResponse(
         access_token=token,
         user_id=user.id,
@@ -109,12 +143,21 @@ async def verify_otp(db: AsyncSession, payload: VerifyOtpRequest) -> TokenRespon
 
 
 async def resend_otp(db: AsyncSession, email: str) -> dict:
+    import time
+    t0 = time.time()
+    
+    t_start = time.time()
     result = await db.execute(select(PendingUser).where(PendingUser.email == email))
     pending = result.scalar_one_or_none()
+    print(f"[DEBUG] resend_otp - DB Fetch Pending: {time.time() - t_start:.4f}s")
 
     if not pending:
+        t_start = time.time()
         result = await db.execute(select(User).where(User.email == email))
-        if result.scalar_one_or_none():
+        user_exists = result.scalar_one_or_none()
+        print(f"[DEBUG] resend_otp - DB Fetch User: {time.time() - t_start:.4f}s")
+        
+        if user_exists:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="This email is already verified. Please log in.",
@@ -126,30 +169,56 @@ async def resend_otp(db: AsyncSession, email: str) -> dict:
 
     otp = _generate_otp()
     pending.verification_otp = otp
+    
+    t_start = time.time()
     await db.commit()
+    print(f"[DEBUG] resend_otp - DB Commit: {time.time() - t_start:.4f}s")
+    
     _send_otp(pending.email, otp)
+    print(f"[DEBUG] TOTAL resend_otp Time: {time.time() - t0:.4f}s")
     return {"message": "OTP resent successfully."}
 
 
 async def login(db: AsyncSession, email: str, password: str) -> TokenResponse:
+    import time
+    t0 = time.time()
+    
+    t_start = time.time()
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
+    print(f"[DEBUG] login - DB Fetch User: {time.time() - t_start:.4f}s")
 
-    if not user or not verify_password(password, user.hashed_password):
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    
+    t_start = time.time()
+    is_valid = await verify_password_async(password, user.hashed_password)
+    print(f"[DEBUG] login - Password Verification: {time.time() - t_start:.4f}s")
+    
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
     if not user.is_verified:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account not verified. Please complete OTP verification.",
         )
 
+    t_start = time.time()
     token = create_access_token(
         data={"sub": user.id, "email": user.email, "global_role": user.global_role}
     )
+    print(f"[DEBUG] login - Token generation: {time.time() - t_start:.4f}s")
+    
+    print(f"[DEBUG] TOTAL login Time: {time.time() - t0:.4f}s")
     return TokenResponse(
         access_token=token,
         user_id=user.id,
