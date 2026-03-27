@@ -1,3 +1,4 @@
+# app/core/config.py
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import os
@@ -24,6 +25,7 @@ class Settings(BaseSettings):
     SUPABASE_DB_HOST: str = os.getenv("SUPABASE_DB_HOST")
     SUPABASE_DB_PORT: str = os.getenv("SUPABASE_DB_PORT")
     SUPABASE_DB_NAME: str = os.getenv("SUPABASE_DB_NAME")
+    SUPABASE_DB_PREPARE_STATEMENTS: bool = os.getenv("SUPABASE_DB_PREPARE_STATEMENTS")
 
     # App
     ENVIRONMENT: str = os.getenv("ENVIRONMENT")
@@ -31,7 +33,7 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL(self) -> str:
-        """Sync URL — used by Alembic only."""
+        """Sync URL — Alembic only."""
         if self.SUPABASE_DB_HOST:
             return (
                 f"postgresql+psycopg2://{self.SUPABASE_DB_USER}:{self.SUPABASE_DB_PASSWORD}"
@@ -47,7 +49,6 @@ class Settings(BaseSettings):
             return (
                 f"postgresql+asyncpg://{self.SUPABASE_DB_USER}:{self.SUPABASE_DB_PASSWORD}"
                 f"@{self.SUPABASE_DB_HOST}:{self.SUPABASE_DB_PORT}/{self.SUPABASE_DB_NAME}"
-                "?ssl=require"
             )
         return "sqlite+aiosqlite:///./dev.db"
 

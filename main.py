@@ -3,12 +3,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+from app.db.session import async_engine
 from app.domains.auth.router import router as auth_router
+from app.domains.workspaces.router import router as workspaces_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
+    await async_engine.dispose()
 
 
 app = FastAPI(
@@ -27,8 +30,9 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix="/auth")
+app.include_router(workspaces_router, prefix="/workspaces")
 
 
 @app.get("/health", tags=["system"])
-def health_check() -> dict:
+async def health_check() -> dict:
     return {"status": "ok", "version": "2.0.0"}
