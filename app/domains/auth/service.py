@@ -2,6 +2,7 @@
 import logging
 import random
 from fastapi import HTTPException, status
+import time
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import (
@@ -29,7 +30,6 @@ def _send_otp(email: str, otp: str) -> None:
 
 
 async def register(db: AsyncSession, payload: RegisterRequest) -> RegisterResponse:
-    import time
     t0 = time.time()
     
     # 1. Check existing user
