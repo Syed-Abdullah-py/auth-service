@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     SUPABASE_DB_NAME: str = os.getenv("SUPABASE_DB_NAME")
     SUPABASE_DB_PREPARE_STATEMENTS: bool = os.getenv("SUPABASE_DB_PREPARE_STATEMENTS")
 
+    # Storage
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL")
+    SUPABASE_SERVICE_KEY: str = os.getenv("SUPABASE_SERVICE_KEY")
+    SUPABASE_STORAGE_BUCKET: str = os.getenv("SUPABASE_STORAGE_BUCKET")
+
     # App
     ENVIRONMENT: str = os.getenv("ENVIRONMENT")
     CORS_ORIGINS: list[str] = os.getenv("CORS_ORIGINS")
