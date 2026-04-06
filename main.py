@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.db.session import async_engine
 from app.domains.auth.router import router as auth_router
 from app.domains.workspaces.router import router as workspaces_router
+from app.domains.patients.router import router as patients_router
 
 
 @asynccontextmanager
@@ -31,6 +32,7 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/auth")
 app.include_router(workspaces_router, prefix="/workspaces")
+app.include_router(patients_router, prefix="/patients")
 
 
 @app.get("/health", tags=["system"])

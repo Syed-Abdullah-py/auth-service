@@ -1,7 +1,12 @@
 services:
-  web:
+  auth-service:
     build: .
     ports:
       - "8000:8000"
     volumes:
-      - .:/app/ex
+      - .:/app
+    environment:
+      - WATCHFILES_FORCE_POLLING=true
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - .env
