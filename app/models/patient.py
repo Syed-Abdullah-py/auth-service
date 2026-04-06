@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, DateTime, ForeignKey, String
+from sqlalchemy import Column, DateTime, ForeignKey, String, Date
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
@@ -17,7 +17,7 @@ class Patient(Base):
 
     first_name = Column(String, nullable=False)
     last_name = Column(String, nullable=False)
-    dob = Column(DateTime, nullable=False)
+    dob = Column(Date, nullable=False)
     gender = Column(String, nullable=False)
     phone_number = Column(String, nullable=False)
     mrn = Column(String, nullable=True)
