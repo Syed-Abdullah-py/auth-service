@@ -1,7 +1,7 @@
 # app/core/security.py
 import asyncio
 from datetime import datetime, timedelta
-from functools import partial
+from functools import partial, lru_cache
 
 from jose import jwt
 from passlib.context import CryptContext
@@ -10,11 +10,11 @@ from app.core.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-
+@lru_cache(maxsize=1024)
 def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
-
+@lru_cache(maxsize=1024)
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 

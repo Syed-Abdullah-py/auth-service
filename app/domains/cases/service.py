@@ -2,6 +2,7 @@ import json
 import uuid
 from datetime import datetime
 
+from async_lru import alru_cache
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -189,6 +190,7 @@ async def delete_case(
     await db.commit()
 
 
+@alru_cache(maxsize=128, ttl=60)
 async def get_stats(db: AsyncSession, ctx: WorkspaceContext) -> dict:
     base = (
         select(Case.status, func.count(Case.id))

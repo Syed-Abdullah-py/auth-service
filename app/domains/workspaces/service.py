@@ -3,7 +3,9 @@ import logging
 import re
 import uuid
 from datetime import datetime, timedelta
+from functools import lru_cache
 
+from async_lru import alru_cache
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-
+@lru_cache(maxsize=1024)
 def _make_slug(name: str) -> str:
     slug = name.lower().strip()
     slug = re.sub(r"[^a-z0-9\s-]", "", slug)
@@ -411,7 +413,7 @@ async def reject_invitation(
 
 # ── Join Requests ─────────────────────────────────────────────────────────────
 
-
+@alru_cache(maxsize=256, ttl=300)
 async def get_discoverable_workspaces(
     db: AsyncSession, user: User
 ) -> list[Workspace]:
