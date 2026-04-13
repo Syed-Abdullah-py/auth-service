@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.db import get_db
@@ -12,6 +12,7 @@ router = APIRouter(tags=["patients"])
 
 @router.get("/", response_model=list[PatientResponse])
 async def list_patients(
+    response: Response,
     ctx: WorkspaceContext = Depends(
         require_workspace_role(
             WorkspaceRoleEnum.DOCTOR,
@@ -21,6 +22,7 @@ async def list_patients(
     ),
     db: AsyncSession = Depends(get_db),
 ):
+    response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=300"
     return await service.list_patients(db, ctx)
 
 

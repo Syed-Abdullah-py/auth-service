@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.db import get_db
@@ -17,6 +17,7 @@ router = APIRouter(tags=["cases"])
 
 @router.get("/stats", response_model=CaseStatsResponse)
 async def get_stats(
+    response: Response,
     ctx: WorkspaceContext = Depends(
         require_workspace_role(
             WorkspaceRoleEnum.DOCTOR,
@@ -26,11 +27,13 @@ async def get_stats(
     ),
     db: AsyncSession = Depends(get_db),
 ):
+    response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=300"
     return await service.get_stats(db, ctx)
 
 
 @router.get("/recent", response_model=list[CaseResponse])
 async def get_recent(
+    response: Response,
     ctx: WorkspaceContext = Depends(
         require_workspace_role(
             WorkspaceRoleEnum.DOCTOR,
@@ -40,11 +43,13 @@ async def get_recent(
     ),
     db: AsyncSession = Depends(get_db),
 ):
+    response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=300"
     return await service.get_recent(db, ctx)
 
 
 @router.get("/", response_model=list[CaseResponse])
 async def list_cases(
+    response: Response,
     ctx: WorkspaceContext = Depends(
         require_workspace_role(
             WorkspaceRoleEnum.DOCTOR,
@@ -54,6 +59,7 @@ async def list_cases(
     ),
     db: AsyncSession = Depends(get_db),
 ):
+    response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=300"
     return await service.list_cases(db, ctx)
 
 
