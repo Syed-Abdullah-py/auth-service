@@ -5,6 +5,7 @@ from datetime import datetime
 from async_lru import alru_cache
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import select, func
+from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.event_bus import WorkspaceEvent, event_bus
@@ -33,6 +34,7 @@ async def _get_case_scoped(
 ) -> Case:
     result = await db.execute(
         select(Case)
+        .options(joinedload(Case.patient))
         .join(Patient, Case.patient_id == Patient.id)
         .where(Case.id == case_id, Patient.workspace_id == ctx.workspace_id)
     )
@@ -45,6 +47,7 @@ async def _get_case_scoped(
 async def list_cases(db: AsyncSession, ctx: WorkspaceContext) -> list[Case]:
     query = (
         select(Case)
+        .options(joinedload(Case.patient))
         .join(Patient, Case.patient_id == Patient.id)
         .where(Patient.workspace_id == ctx.workspace_id)
     )
@@ -126,6 +129,14 @@ async def create_case(
     db.add(case)
     await db.commit()
     await db.refresh(case)
+
+    # Reload with patient relationship so the router can serialize patient name
+    result = await db.execute(
+        select(Case)
+        .options(joinedload(Case.patient))
+        .where(Case.id == case.id)
+    )
+    case = result.scalar_one()
 
     await event_bus.publish(
         WorkspaceEvent(
@@ -219,6 +230,7 @@ async def get_stats(db: AsyncSession, ctx: WorkspaceContext) -> dict:
 async def get_recent(db: AsyncSession, ctx: WorkspaceContext) -> list[Case]:
     query = (
         select(Case)
+        .options(joinedload(Case.patient))
         .join(Patient, Case.patient_id == Patient.id)
         .where(Patient.workspace_id == ctx.workspace_id)
     )

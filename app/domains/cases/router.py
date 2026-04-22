@@ -44,7 +44,8 @@ async def get_recent(
     db: AsyncSession = Depends(get_db),
 ):
     response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=300"
-    return await service.get_recent(db, ctx)
+    cases = await service.get_recent(db, ctx)
+    return [CaseResponse.from_case(c) for c in cases]
 
 
 @router.get("/", response_model=list[CaseResponse])
@@ -60,7 +61,8 @@ async def list_cases(
     db: AsyncSession = Depends(get_db),
 ):
     response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=300"
-    return await service.list_cases(db, ctx)
+    cases = await service.list_cases(db, ctx)
+    return [CaseResponse.from_case(c) for c in cases]
 
 
 @router.post("/", response_model=CaseResponse, status_code=201)
@@ -75,7 +77,7 @@ async def create_case(
     ),
     db: AsyncSession = Depends(get_db),
 ):
-    return await service.create_case(
+    case = await service.create_case(
         db=db,
         ctx=ctx,
         patient_id=patient_id,
@@ -84,6 +86,7 @@ async def create_case(
         assigned_to_member_id=assigned_to_member_id,
         notes=notes,
     )
+    return CaseResponse.from_case(case)
 
 
 @router.get("/{case_id}", response_model=CaseResponse)
@@ -98,7 +101,8 @@ async def get_case(
     ),
     db: AsyncSession = Depends(get_db),
 ):
-    return await service.get_case(db, case_id, ctx)
+    case = await service.get_case(db, case_id, ctx)
+    return CaseResponse.from_case(case)
 
 
 @router.put("/{case_id}", response_model=CaseResponse)
@@ -114,7 +118,8 @@ async def update_case(
     ),
     db: AsyncSession = Depends(get_db),
 ):
-    return await service.update_case(db, case_id, payload, ctx)
+    case = await service.update_case(db, case_id, payload, ctx)
+    return CaseResponse.from_case(case)
 
 
 @router.delete("/{case_id}", status_code=204)
