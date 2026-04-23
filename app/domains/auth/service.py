@@ -3,8 +3,10 @@ import logging
 import random
 from fastapi import HTTPException, status
 import time
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.config import settings
 from app.core.security import (
     get_password_hash_async,
     verify_password_async,
@@ -195,6 +197,13 @@ async def login(db: AsyncSession, email: str, password: str) -> TokenResponse:
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    if user.hashed_password is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This account uses Google Sign-In. Please use the Google button to log in.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     t_start = time.time()
     is_valid = await verify_password_async(password, user.hashed_password)
     print(f"[DEBUG] login - Password Verification: {time.time() - t_start:.4f}s")
@@ -225,4 +234,121 @@ async def login(db: AsyncSession, email: str, password: str) -> TokenResponse:
         email=user.email,
         name=user.name,
         global_role=user.global_role,
+    )
+
+
+async def google_auth(
+    db: AsyncSession,
+    id_token: str,
+    global_role: str | None,
+) -> TokenResponse:
+    # 1. Verify the id_token with Google's tokeninfo endpoint
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"id_token": id_token},
+        )
+
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Google token.",
+        )
+
+    token_data = resp.json()
+
+    # 2. Validate the token was issued for this app
+    if settings.GOOGLE_CLIENT_ID and token_data.get("aud") != settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token audience mismatch.",
+        )
+
+    google_sub = token_data.get("sub")
+    email = token_data.get("email")
+    name = token_data.get("name")
+    avatar_url = token_data.get("picture")
+
+    if not google_sub or not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incomplete profile from Google.",
+        )
+
+    # 3. Look up by google_id (returning Google user — fastest path)
+    result = await db.execute(select(User).where(User.google_id == google_sub))
+    user = result.scalar_one_or_none()
+
+    if user:
+        if avatar_url and user.avatar_url != avatar_url:
+            user.avatar_url = avatar_url
+            await db.commit()
+            await db.refresh(user)
+        token = create_access_token(
+            data={"sub": user.id, "email": user.email, "global_role": user.global_role}
+        )
+        return TokenResponse(
+            access_token=token,
+            user_id=user.id,
+            email=user.email,
+            name=user.name,
+            global_role=user.global_role,
+        )
+
+    # 4. Check if a password account exists with the same email — link it silently
+    result = await db.execute(select(User).where(User.email == email))
+    existing_user = result.scalar_one_or_none()
+
+    if existing_user:
+        existing_user.google_id = google_sub
+        if avatar_url and not existing_user.avatar_url:
+            existing_user.avatar_url = avatar_url
+        await db.commit()
+        await db.refresh(existing_user)
+        token = create_access_token(
+            data={
+                "sub": existing_user.id,
+                "email": existing_user.email,
+                "global_role": existing_user.global_role,
+            }
+        )
+        return TokenResponse(
+            access_token=token,
+            user_id=existing_user.id,
+            email=existing_user.email,
+            name=existing_user.name,
+            global_role=existing_user.global_role,
+        )
+
+    # 5. No account found — new signup requires a role
+    if not global_role:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="GOOGLE_USER_NOT_FOUND",
+        )
+
+    # 6. Create a new verified user (Google already confirmed the email)
+    new_user = User(
+        email=email,
+        hashed_password=None,
+        google_id=google_sub,
+        name=name,
+        global_role=global_role,
+        avatar_url=avatar_url,
+        is_verified=True,
+        terms_accepted=True,
+    )
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
+
+    token = create_access_token(
+        data={"sub": new_user.id, "email": new_user.email, "global_role": new_user.global_role}
+    )
+    return TokenResponse(
+        access_token=token,
+        user_id=new_user.id,
+        email=new_user.email,
+        name=new_user.name,
+        global_role=new_user.global_role,
     )

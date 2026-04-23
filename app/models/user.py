@@ -20,7 +20,8 @@ class User(Base):
 
     id = Column(String, primary_key=True, default=_gen_id)
     email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
+    hashed_password = Column(String, nullable=True)
+    google_id = Column(String, unique=True, nullable=True, index=True)
     name = Column(String, nullable=True)
     global_role = Column(String, nullable=True)
 

@@ -12,6 +12,7 @@ from app.domains.auth.schemas import (
     LoginRequest,
     TokenResponse,
     MessageResponse,
+    GoogleAuthRequest,
 )
 
 router = APIRouter(tags=["auth"])
@@ -35,6 +36,11 @@ async def resend_otp(payload: ResendOtpRequest, db: AsyncSession = Depends(get_d
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
     return await service.login(db, payload.email, payload.password)
+
+
+@router.post("/google", response_model=TokenResponse)
+async def google_auth(payload: GoogleAuthRequest, db: AsyncSession = Depends(get_db)):
+    return await service.google_auth(db, payload.id_token, payload.global_role)
 
 
 @router.get("/me")

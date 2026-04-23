@@ -58,3 +58,15 @@ class TokenResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class GoogleAuthRequest(BaseModel):
+    id_token: str
+    global_role: str | None = None
+
+    @field_validator("global_role")
+    @classmethod
+    def validate_role(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("ADMIN", "RADIOLOGIST"):
+            raise ValueError("global_role must be ADMIN or RADIOLOGIST.")
+        return v

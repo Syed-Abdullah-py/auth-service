@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = os.getenv("ENVIRONMENT")
     CORS_ORIGINS: list[str] = os.getenv("CORS_ORIGINS")
 
+    # OAuth
+    GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
+
     @property
     def DATABASE_URL(self) -> str:
         """Sync URL — Alembic only."""
