@@ -9,7 +9,7 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.event_bus import WorkspaceEvent, event_bus
-from app.core.storage import upload_to_supabase
+from app.core.storage import delete_scan_dir, save_scan_locally, save_scan_to_session, move_session_to_case
 from app.dependencies.rbac import WorkspaceContext
 from app.domains.cases.schemas import CaseUpdate
 from app.models.case import Case, CaseStatusEnum, CasePriorityEnum
@@ -41,6 +41,86 @@ async def _get_case_scoped(
     case = result.scalar_one_or_none()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found.")
+    return case
+
+
+async def upload_scan_to_session(
+    session_id: str,
+    file_index: int,
+    scan: UploadFile,
+    workspace_id: str,
+) -> None:
+    _validate_scan_filename(scan.filename)
+    file_bytes = await scan.read()
+    if len(file_bytes) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail=f"File {scan.filename} exceeds 500MB limit.")
+    await save_scan_to_session(
+        file_bytes=file_bytes,
+        session_id=f"{workspace_id}_{session_id}",
+        file_index=file_index,
+        filename=scan.filename,
+    )
+
+
+async def create_case_from_session(
+    db: AsyncSession,
+    ctx: WorkspaceContext,
+    session_id: str,
+    patient_id: str,
+    priority: CasePriorityEnum,
+    assigned_to_member_id: str | None = None,
+    notes: str | None = None,
+) -> Case:
+    result = await db.execute(
+        select(Patient).where(Patient.id == patient_id, Patient.workspace_id == ctx.workspace_id)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Patient not found in this workspace.")
+
+    if assigned_to_member_id:
+        member = await db.execute(
+            select(WorkspaceMember).where(
+                WorkspaceMember.id == assigned_to_member_id,
+                WorkspaceMember.workspace_id == ctx.workspace_id,
+            )
+        )
+        if not member.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Assigned member not found in this workspace.")
+
+    case_id = str(uuid.uuid4())
+    full_session_id = f"{ctx.workspace_id}_{session_id}"
+    scan_paths = await move_session_to_case(full_session_id, case_id)
+
+    if len(scan_paths) != 4:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session has {len(scan_paths)} scan(s); exactly 4 are required. Upload all files first.",
+        )
+
+    case = Case(
+        id=case_id,
+        patient_id=patient_id,
+        file_references=json.dumps(scan_paths),
+        priority=priority,
+        assigned_to_member_id=assigned_to_member_id,
+        notes=notes,
+    )
+    db.add(case)
+    await db.commit()
+    await db.refresh(case)
+
+    result = await db.execute(
+        select(Case).options(joinedload(Case.patient)).where(Case.id == case.id)
+    )
+    case = result.scalar_one()
+
+    await event_bus.publish(
+        WorkspaceEvent(
+            type="case.created",
+            workspace_id=ctx.workspace_id,
+            payload={"case_id": case.id, "patient_id": case.patient_id},
+        )
+    )
     return case
 
 
@@ -95,9 +175,9 @@ async def create_case(
         if not member.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Assigned member not found in this workspace.")
 
-    # Upload scans to Supabase Storage
+    # Save scans to local disk at app/db/mri_scans/{case_id}/
     case_id = str(uuid.uuid4())
-    scan_urls = []
+    scan_paths = []
 
     for i, scan in enumerate(scans):
         file_bytes = await scan.read()
@@ -108,20 +188,20 @@ async def create_case(
             )
 
         ext = scan.filename[scan.filename.index("."):]
-        file_path = f"{ctx.workspace_id}/{patient_id}/{case_id}/scan_{i}{ext}"
+        filename = f"scan_{i}{ext}"
 
-        url = await upload_to_supabase(
+        path = await save_scan_locally(
             file_bytes=file_bytes,
-            file_path=file_path,
-            content_type=scan.content_type or "application/octet-stream",
+            case_id=case_id,
+            filename=filename,
         )
-        scan_urls.append(url)
+        scan_paths.append(path)
 
     # Create case record
     case = Case(
         id=case_id,
         patient_id=patient_id,
-        file_references=json.dumps(scan_urls),
+        file_references=json.dumps(scan_paths),
         priority=priority,
         assigned_to_member_id=assigned_to_member_id,
         notes=notes,
@@ -199,6 +279,7 @@ async def delete_case(
     case = await _get_case_scoped(db, case_id, ctx)
     await db.delete(case)
     await db.commit()
+    await delete_scan_dir(case_id)
 
 
 @alru_cache(maxsize=128, ttl=60)

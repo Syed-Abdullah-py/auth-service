@@ -1,6 +1,11 @@
-from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
+import json
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.storage import MRI_SCANS_DIR
 from app.dependencies.db import get_db
 from app.dependencies.rbac import WorkspaceContext, require_workspace_role
 from app.domains.cases import service
@@ -65,6 +70,48 @@ async def list_cases(
     return [CaseResponse.from_case(c) for c in cases]
 
 
+@router.post("/scan", status_code=200)
+async def upload_scan(
+    session_id: str = Form(...),
+    file_index: int = Form(...),
+    scan: UploadFile = File(...),
+    ctx: WorkspaceContext = Depends(
+        require_workspace_role(WorkspaceRoleEnum.ADMIN, WorkspaceRoleEnum.OWNER)
+    ),
+):
+    await service.upload_scan_to_session(
+        session_id=session_id,
+        file_index=file_index,
+        scan=scan,
+        workspace_id=ctx.workspace_id,
+    )
+    return {"ok": True}
+
+
+@router.post("/from-session", response_model=CaseResponse, status_code=201)
+async def create_case_from_session(
+    session_id: str = Form(...),
+    patient_id: str = Form(...),
+    priority: CasePriorityEnum = Form(CasePriorityEnum.NORMAL),
+    assigned_to_member_id: str | None = Form(None),
+    notes: str | None = Form(None),
+    ctx: WorkspaceContext = Depends(
+        require_workspace_role(WorkspaceRoleEnum.ADMIN, WorkspaceRoleEnum.OWNER)
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    case = await service.create_case_from_session(
+        db=db,
+        ctx=ctx,
+        session_id=session_id,
+        patient_id=patient_id,
+        priority=priority,
+        assigned_to_member_id=assigned_to_member_id,
+        notes=notes,
+    )
+    return CaseResponse.from_case(case)
+
+
 @router.post("/", response_model=CaseResponse, status_code=201)
 async def create_case(
     patient_id: str = Form(...),
@@ -87,6 +134,38 @@ async def create_case(
         notes=notes,
     )
     return CaseResponse.from_case(case)
+
+
+@router.get("/{case_id}/scan/{scan_index}")
+async def serve_scan(
+    case_id: str,
+    scan_index: int,
+    ctx: WorkspaceContext = Depends(
+        require_workspace_role(
+            WorkspaceRoleEnum.DOCTOR,
+            WorkspaceRoleEnum.ADMIN,
+            WorkspaceRoleEnum.OWNER,
+        )
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    case = await service.get_case(db, case_id, ctx)
+    try:
+        refs = json.loads(case.file_references)
+    except (json.JSONDecodeError, TypeError):
+        raise HTTPException(status_code=500, detail="Malformed file_references.")
+    if scan_index < 0 or scan_index >= len(refs):
+        raise HTTPException(status_code=404, detail="Scan index out of range.")
+    filename = Path(refs[scan_index]).name
+    path = MRI_SCANS_DIR / case_id / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Scan file not found on disk.")
+    return FileResponse(
+        str(path),
+        media_type="application/octet-stream",
+        filename=filename,
+        headers={"Cache-Control": "private, max-age=1800"},
+    )
 
 
 @router.get("/{case_id}", response_model=CaseResponse)
