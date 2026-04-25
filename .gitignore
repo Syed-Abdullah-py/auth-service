@@ -7,3 +7,4 @@ test.db
 uploads
 .gitignore
 .venv
+app/db/mri_scans/*
