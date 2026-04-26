@@ -168,6 +168,89 @@ async def serve_scan(
     )
 
 
+_VALID_MODALITIES = {"t1", "t1ce", "t2", "flair"}
+_TOTAL_SLICES = 155
+
+
+@router.get("/{case_id}/mesh")
+async def serve_mesh(
+    case_id: str,
+    ctx: WorkspaceContext = Depends(
+        require_workspace_role(
+            WorkspaceRoleEnum.DOCTOR,
+            WorkspaceRoleEnum.ADMIN,
+            WorkspaceRoleEnum.OWNER,
+        )
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    await service.get_case(db, case_id, ctx)
+    path = MRI_SCANS_DIR / case_id / "mesh.glb"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="3D mesh not yet generated for this case.")
+    return FileResponse(
+        str(path),
+        media_type="model/gltf-binary",
+        filename="mesh.glb",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
+
+
+@router.get("/{case_id}/seg")
+async def serve_seg(
+    case_id: str,
+    ctx: WorkspaceContext = Depends(
+        require_workspace_role(
+            WorkspaceRoleEnum.DOCTOR,
+            WorkspaceRoleEnum.ADMIN,
+            WorkspaceRoleEnum.OWNER,
+        )
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    await service.get_case(db, case_id, ctx)
+    path = MRI_SCANS_DIR / case_id / "seg.nii"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Segmentation mask not yet generated for this case.")
+    return FileResponse(
+        str(path),
+        media_type="application/octet-stream",
+        filename="seg.nii",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
+
+
+@router.get("/{case_id}/slices/{modality}/{index}")
+async def serve_slice(
+    case_id: str,
+    modality: str,
+    index: int,
+    masked: bool = False,
+    ctx: WorkspaceContext = Depends(
+        require_workspace_role(
+            WorkspaceRoleEnum.DOCTOR,
+            WorkspaceRoleEnum.ADMIN,
+            WorkspaceRoleEnum.OWNER,
+        )
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    if modality not in _VALID_MODALITIES:
+        raise HTTPException(status_code=400, detail=f"Invalid modality '{modality}'. Must be one of {_VALID_MODALITIES}.")
+    if index < 0 or index >= _TOTAL_SLICES:
+        raise HTTPException(status_code=400, detail=f"Slice index must be 0–{_TOTAL_SLICES - 1}.")
+    await service.get_case(db, case_id, ctx)
+    suffix = "_m" if masked else ""
+    path = MRI_SCANS_DIR / case_id / "slices" / modality / f"{index:03d}{suffix}.png"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Slice not found.")
+    return FileResponse(
+        str(path),
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
+
+
 @router.get("/{case_id}", response_model=CaseResponse)
 async def get_case(
     case_id: str,
