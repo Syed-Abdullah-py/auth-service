@@ -1,6 +1,7 @@
 import json
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 from async_lru import alru_cache
 from fastapi import HTTPException, UploadFile
@@ -9,7 +10,8 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.event_bus import WorkspaceEvent, event_bus
-from app.core.storage import delete_scan_dir, save_scan_locally, save_scan_to_session, move_session_to_case
+from app.core.pipeline import run_case_pipeline
+from app.core.storage import MRI_SCANS_DIR, delete_scan_dir, save_scan_locally, save_scan_to_session, move_session_to_case
 from app.dependencies.rbac import WorkspaceContext
 from app.domains.cases.schemas import CaseUpdate
 from app.models.case import Case, CaseStatusEnum, CasePriorityEnum
@@ -108,6 +110,20 @@ async def create_case_from_session(
     db.add(case)
     await db.commit()
     await db.refresh(case)
+
+    # Run ML pipeline synchronously before returning — rolls back on failure
+    case_dir = MRI_SCANS_DIR / case_id
+    abs_paths = [case_dir / Path(p).name for p in scan_paths]
+    try:
+        await run_case_pipeline(case_dir, abs_paths)
+    except Exception as exc:
+        await db.delete(case)
+        await db.commit()
+        await delete_scan_dir(case_id)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Case pipeline failed: {exc}. Please re-upload the scans.",
+        ) from exc
 
     result = await db.execute(
         select(Case).options(joinedload(Case.patient)).where(Case.id == case.id)
@@ -209,6 +225,20 @@ async def create_case(
     db.add(case)
     await db.commit()
     await db.refresh(case)
+
+    # Run ML pipeline synchronously before returning — rolls back on failure
+    case_dir = MRI_SCANS_DIR / case_id
+    abs_paths = [case_dir / Path(p).name for p in scan_paths]
+    try:
+        await run_case_pipeline(case_dir, abs_paths)
+    except Exception as exc:
+        await db.delete(case)
+        await db.commit()
+        await delete_scan_dir(case_id)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Case pipeline failed: {exc}. Please re-upload the scans.",
+        ) from exc
 
     # Reload with patient relationship so the router can serialize patient name
     result = await db.execute(
