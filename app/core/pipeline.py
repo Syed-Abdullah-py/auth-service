@@ -37,9 +37,9 @@ _BRAIN_COLOR = (160, 160, 160, 80)
 
 # BraTS label → PNG overlay RGBA
 _SEG_OVERLAY: dict[int, tuple[int, int, int, int]] = {
-    1: (220,  40,  40, 180),
-    2: ( 50, 200,  80, 180),
-    4: (255, 140,   0, 180),
+    1: (220,  40,  40, 180),   # necrotic core — red
+    2: (250, 200,  20, 180),   # edema — yellow
+    4: ( 59, 130, 246, 180),   # active tumor — blue
 }
 
 # ---------------------------------------------------------------------------

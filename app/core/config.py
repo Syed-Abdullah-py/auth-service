@@ -1,10 +1,10 @@
 # app/core/config.py
 from functools import lru_cache
+from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import os
 from dotenv import load_dotenv
 
-# Load variables from .env file
 load_dotenv()
 
 class Settings(BaseSettings):
@@ -19,21 +19,31 @@ class Settings(BaseSettings):
     ALGORITHM: str = os.getenv("ALGORITHM")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES")
 
-    # Supabase
-    SUPABASE_DB_USER: str = os.getenv("SUPABASE_DB_USER")
-    SUPABASE_DB_PASSWORD: str = os.getenv("SUPABASE_DB_PASSWORD")
-    SUPABASE_DB_HOST: str = os.getenv("SUPABASE_DB_HOST")
-    SUPABASE_DB_PORT: str = os.getenv("SUPABASE_DB_PORT")
-    SUPABASE_DB_NAME: str = os.getenv("SUPABASE_DB_NAME")
-    SUPABASE_DB_PREPARE_STATEMENTS: bool = os.getenv("SUPABASE_DB_PREPARE_STATEMENTS")
+    # DB mode switch — flip this one flag in .env to go local
+    USE_LOCAL_DB: bool = False
+
+    # Local Postgres (used when USE_LOCAL_DB=true)
+    LOCAL_DB_HOST: str = "localhost"
+    LOCAL_DB_PORT: str = "5432"
+    LOCAL_DB_USER: str = "postgres"
+    LOCAL_DB_PASSWORD: str = "postgres"
+    LOCAL_DB_NAME: str = "neuroscan"
+
+    # Supabase DB (used when USE_LOCAL_DB=false)
+    SUPABASE_DB_USER: Optional[str] = None
+    SUPABASE_DB_PASSWORD: Optional[str] = None
+    SUPABASE_DB_HOST: Optional[str] = None
+    SUPABASE_DB_PORT: Optional[str] = None
+    SUPABASE_DB_NAME: Optional[str] = None
+    SUPABASE_DB_PREPARE_STATEMENTS: bool = False
 
     # Storage
-    SUPABASE_URL: str = os.getenv("SUPABASE_URL")
-    SUPABASE_SERVICE_KEY: str = os.getenv("SUPABASE_SERVICE_KEY")
-    SUPABASE_STORAGE_BUCKET: str = os.getenv("SUPABASE_STORAGE_BUCKET")
+    SUPABASE_URL: Optional[str] = None
+    SUPABASE_SERVICE_KEY: Optional[str] = None
+    SUPABASE_STORAGE_BUCKET: Optional[str] = None
 
     # App
-    ENVIRONMENT: str = os.getenv("ENVIRONMENT")
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     CORS_ORIGINS: list[str] = os.getenv("CORS_ORIGINS")
 
     # OAuth
@@ -42,23 +52,29 @@ class Settings(BaseSettings):
     @property
     def DATABASE_URL(self) -> str:
         """Sync URL — Alembic only."""
-        if self.SUPABASE_DB_HOST:
+        if self.USE_LOCAL_DB:
             return (
-                f"postgresql+psycopg2://{self.SUPABASE_DB_USER}:{self.SUPABASE_DB_PASSWORD}"
-                f"@{self.SUPABASE_DB_HOST}:{self.SUPABASE_DB_PORT}/{self.SUPABASE_DB_NAME}"
-                "?sslmode=require"
+                f"postgresql+psycopg2://{self.LOCAL_DB_USER}:{self.LOCAL_DB_PASSWORD}"
+                f"@{self.LOCAL_DB_HOST}:{self.LOCAL_DB_PORT}/{self.LOCAL_DB_NAME}"
             )
-        return "sqlite:///./dev.db"
+        return (
+            f"postgresql+psycopg2://{self.SUPABASE_DB_USER}:{self.SUPABASE_DB_PASSWORD}"
+            f"@{self.SUPABASE_DB_HOST}:{self.SUPABASE_DB_PORT}/{self.SUPABASE_DB_NAME}"
+            "?sslmode=require"
+        )
 
     @property
     def ASYNC_DATABASE_URL(self) -> str:
         """Async URL — used by the FastAPI app."""
-        if self.SUPABASE_DB_HOST:
+        if self.USE_LOCAL_DB:
             return (
-                f"postgresql+asyncpg://{self.SUPABASE_DB_USER}:{self.SUPABASE_DB_PASSWORD}"
-                f"@{self.SUPABASE_DB_HOST}:{self.SUPABASE_DB_PORT}/{self.SUPABASE_DB_NAME}"
+                f"postgresql+asyncpg://{self.LOCAL_DB_USER}:{self.LOCAL_DB_PASSWORD}"
+                f"@{self.LOCAL_DB_HOST}:{self.LOCAL_DB_PORT}/{self.LOCAL_DB_NAME}"
             )
-        return "sqlite+aiosqlite:///./dev.db"
+        return (
+            f"postgresql+asyncpg://{self.SUPABASE_DB_USER}:{self.SUPABASE_DB_PASSWORD}"
+            f"@{self.SUPABASE_DB_HOST}:{self.SUPABASE_DB_PORT}/{self.SUPABASE_DB_NAME}"
+        )
 
 
 @lru_cache(maxsize=1)
