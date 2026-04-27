@@ -29,6 +29,7 @@ def _generate_otp() -> str:
 
 def _send_otp(email: str, otp: str) -> None:
     logger.warning("[DEV ONLY] OTP for %s: %s", email, otp)
+    print(f"\n  *** OTP for {email}: {otp} ***\n", flush=True)
 
 
 async def register(db: AsyncSession, payload: RegisterRequest) -> RegisterResponse:

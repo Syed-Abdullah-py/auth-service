@@ -35,8 +35,8 @@ MODALITIES = ["flair", "t1", "t1ce", "t2"]
 # BraTS label → RGBA overlay colour
 SEG_COLORS = {
     1: (220,  40,  40, 180),   # necrotic core   — red
-    2: ( 50, 200,  80, 180),   # peritumoral oedema — green
-    4: (255, 140,   0, 180),   # enhancing tumour — orange
+    2: (250, 200,  20, 180),   # peritumoral oedema — yellow
+    4: ( 59, 130, 246, 180),   # active tumour — blue
 }
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
