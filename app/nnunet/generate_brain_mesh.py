@@ -10,9 +10,9 @@ Usage:
 
 The GLB contains:
   - brain_surface  : semi-transparent gray mesh extracted from the modality
-  - ncr            : necrotic core (label 1) — red
-  - edema          : peritumoral edema (label 2) — yellow
-  - enhancing      : enhancing tumor (label 4) — cyan
+  - ncr            : necrotic core (label 1) - red
+  - edema          : peritumoral edema (label 2) - yellow
+  - enhancing      : enhancing tumor (label 4) - cyan
 """
 
 import argparse
@@ -28,9 +28,9 @@ from skimage import measure
 
 # BraTS 2020 segmentation labels
 TUMOR_LABELS = {
-    "ncr":       (1, np.array([220,  50,  50, 255], dtype=np.uint8)),  # necrotic core — red
-    "edema":     (2, np.array([230, 200,  50, 255], dtype=np.uint8)),  # peritumoral edema — yellow
-    "enhancing": (4, np.array([ 50, 200, 220, 255], dtype=np.uint8)),  # enhancing tumor — cyan
+    "ncr":       (1, np.array([220,  50,  50, 255], dtype=np.uint8)),  # necrotic core - red
+    "edema":     (2, np.array([230, 200,  50, 255], dtype=np.uint8)),  # peritumoral edema - yellow
+    "enhancing": (4, np.array([ 50, 200, 220, 255], dtype=np.uint8)),  # enhancing tumor - cyan
 }
 
 BRAIN_COLOR = np.array([160, 160, 160, 80], dtype=np.uint8)   # gray, semi-transparent
@@ -91,7 +91,7 @@ def extract_brain_surface(
 
     print(f"  Brain mask: {brain_mask.sum():,} voxels (full skull-stripped brain)")
 
-    # step_size=2 halves resolution — much faster marching cubes on 240³ volumes
+    # step_size=2 halves resolution - much faster marching cubes on 240³ volumes
     mesh = mesh_from_mask(brain_mask, affine, BRAIN_COLOR, step_size=2)
     if mesh is None:
         return None
@@ -109,7 +109,7 @@ def extract_tumor_regions(
     for name, (label, color) in TUMOR_LABELS.items():
         mask = seg == label
         if not mask.any():
-            print(f"  Label {label} ({name}): not present in mask — skipping.")
+            print(f"  Label {label} ({name}): not present in mask - skipping.")
             continue
         print(f"  Label {label} ({name}): {mask.sum():,} voxels")
         mesh = mesh_from_mask(mask, affine, color, step_size=1)

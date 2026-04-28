@@ -6,6 +6,7 @@ from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 
+
 def _gen_id() -> str:
     return str(uuid.uuid4())
 
@@ -38,9 +39,14 @@ class Case(Base):
     assigned_to_member_id = Column(
         String, ForeignKey("workspace_members.id"), nullable=True
     )
+    # Stable reference to the assigned doctor's user account; survives membership changes
+    assigned_to_user_id = Column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     patient = relationship("Patient", back_populates="cases")
     assigned_to = relationship("WorkspaceMember", back_populates="assigned_cases")
+    assigned_to_user = relationship("User", foreign_keys=[assigned_to_user_id])

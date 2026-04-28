@@ -70,7 +70,7 @@ async def delete_workspace(
     await service.delete_workspace(db, workspace_id, ctx)
 
 
-# ── SSE — must be defined before /{workspace_id}/members to avoid route clash ──
+# ── SSE - must be defined before /{workspace_id}/members to avoid route clash ──
 
 
 @router.get("/{workspace_id}/events")

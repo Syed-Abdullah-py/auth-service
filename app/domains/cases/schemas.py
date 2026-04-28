@@ -23,11 +23,17 @@ class CaseResponse(BaseModel):
     patient_first_name: str | None = None
     patient_last_name: str | None = None
     assigned_to_member_id: str | None = None
+    assigned_to_user_id: str | None = None
+    assigned_to_name: str | None = None
     created_at: datetime
     updated_at: datetime
 
     @classmethod
     def from_case(cls, case) -> "CaseResponse":
+        assigned_user = getattr(case, "assigned_to_user", None)
+        assigned_name = None
+        if assigned_user:
+            assigned_name = assigned_user.name or assigned_user.email
         return cls(
             id=case.id,
             status=case.status,
@@ -40,6 +46,8 @@ class CaseResponse(BaseModel):
             patient_first_name=case.patient.first_name if case.patient else None,
             patient_last_name=case.patient.last_name if case.patient else None,
             assigned_to_member_id=case.assigned_to_member_id,
+            assigned_to_user_id=case.assigned_to_user_id,
+            assigned_to_name=assigned_name,
             created_at=case.created_at,
             updated_at=case.updated_at,
         )

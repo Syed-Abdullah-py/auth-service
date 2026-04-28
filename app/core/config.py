@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = os.getenv("ALGORITHM")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES")
 
-    # DB mode switch — flip this one flag in .env to go local
+    # DB mode switch - flip this one flag in .env to go local
     USE_LOCAL_DB: bool = False
 
     # Local Postgres (used when USE_LOCAL_DB=true)
@@ -51,7 +51,7 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL(self) -> str:
-        """Sync URL — Alembic only."""
+        """Sync URL - Alembic only."""
         if self.USE_LOCAL_DB:
             return (
                 f"postgresql+psycopg2://{self.LOCAL_DB_USER}:{self.LOCAL_DB_PASSWORD}"
@@ -65,7 +65,7 @@ class Settings(BaseSettings):
 
     @property
     def ASYNC_DATABASE_URL(self) -> str:
-        """Async URL — used by the FastAPI app."""
+        """Async URL - used by the FastAPI app."""
         if self.USE_LOCAL_DB:
             return (
                 f"postgresql+asyncpg://{self.LOCAL_DB_USER}:{self.LOCAL_DB_PASSWORD}"

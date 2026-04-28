@@ -2,8 +2,8 @@
 Converts BraTS .nii volumes into axial PNG slices for the frontend viewer.
 
 Outputs two variants per slice:
-  public/brats-slices/<case>/<modality>/<index>.png      — clean grayscale
-  public/brats-slices/<case>/<modality>/<index>_m.png    — with tumour mask overlay
+  public/brats-slices/<case>/<modality>/<index>.png      - clean grayscale
+  public/brats-slices/<case>/<modality>/<index>_m.png    - with tumour mask overlay
 
 Usage:
   python scripts/generate_brats_slices.py
@@ -34,9 +34,9 @@ MODALITIES = ["flair", "t1", "t1ce", "t2"]
 
 # BraTS label → RGBA overlay colour
 SEG_COLORS = {
-    1: (220,  40,  40, 180),   # necrotic core   — red
-    2: (250, 200,  20, 180),   # peritumoral oedema — yellow
-    4: ( 59, 130, 246, 180),   # active tumour — blue
+    1: (220,  40,  40, 180),   # necrotic core   - red
+    2: (250, 200,  20, 180),   # peritumoral oedema - yellow
+    4: ( 59, 130, 246, 180),   # active tumour - blue
 }
 
 # ── Helpers ─────────────────────────────────────────────────────────────────

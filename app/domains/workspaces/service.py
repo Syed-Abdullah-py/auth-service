@@ -203,7 +203,8 @@ async def remove_member(
             detail="Admins cannot remove other Admins.",
         )
 
-    # Unassign cases before removing to avoid FK violations
+    # Null the member FK to avoid FK violations on delete; preserve assigned_to_user_id so
+    # the doctor's name remains on the case and their cases reappear if they rejoin.
     cases = await db.execute(
         select(Case).where(Case.assigned_to_member_id == target.id)
     )
@@ -252,7 +253,7 @@ async def create_invitation(
                 detail="This user is already a member of this workspace.",
             )
 
-    # Upsert invitation — refresh if already pending
+    # Upsert invitation - refresh if already pending
     result = await db.execute(
         select(Invitation).where(
             Invitation.email == payload.email,
@@ -354,7 +355,7 @@ async def accept_invitation(
         await db.commit()
         return {"message": "You are already a member of this workspace."}
 
-    # Role is derived from global_role — never trust the invitation payload
+    # Role is derived from global_role - never trust the invitation payload
     new_role = (
         WorkspaceRoleEnum.ADMIN
         if user.global_role == "ADMIN"

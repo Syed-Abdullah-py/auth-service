@@ -60,9 +60,9 @@ app/
     migrations/          # Alembic env and versioned migrations
   models/                # SQLAlchemy ORM models (imported by Alembic via db/base.py)
   dependencies/
-    db.py                # get_db — yields AsyncSession
-    auth.py              # get_current_user — JWT bearer dependency
-    rbac.py              # require_workspace_role(*roles) — workspace-scoped authz
+    db.py                # get_db - yields AsyncSession
+    auth.py              # get_current_user - JWT bearer dependency
+    rbac.py              # require_workspace_role(*roles) - workspace-scoped authz
   domains/
     auth/                # register, verify-otp, resend-otp, login, /me
     workspaces/          # workspace CRUD, members, invitations, join requests, SSE
@@ -76,7 +76,7 @@ app/
 
 **Workspace RBAC:** Workspace-protected routes use `require_workspace_role(*roles)` as a FastAPI dependency. The caller must pass an `X-Workspace-Id` header. Role hierarchy: `DOCTOR (0) < ADMIN (1) < OWNER (2)`. The dependency returns a `WorkspaceContext` dataclass with `workspace_id`, `member_id`, `role`, and `user`.
 
-**SSE / EventBus:** `GET /workspaces/{id}/events` streams server-sent events. All internal workspace mutations should `await event_bus.publish(WorkspaceEvent(...))`. Import and use only the `event_bus` singleton — never instantiate `EventBus` directly.
+**SSE / EventBus:** `GET /workspaces/{id}/events` streams server-sent events. All internal workspace mutations should `await event_bus.publish(WorkspaceEvent(...))`. Import and use only the `event_bus` singleton - never instantiate `EventBus` directly.
 
 **Database:** The async engine connects to Supabase with `ssl=require` and `statement_cache_size=0` (required for Supabase connection pooling). Alembic uses a separate sync psycopg2 URL. All PKs are UUIDs stored as strings.
 
