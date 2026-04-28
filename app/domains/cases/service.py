@@ -36,7 +36,7 @@ async def _get_case_scoped(
 ) -> Case:
     result = await db.execute(
         select(Case)
-        .options(joinedload(Case.patient))
+        .options(joinedload(Case.patient), joinedload(Case.assigned_to_user))
         .join(Patient, Case.patient_id == Patient.id)
         .where(Case.id == case_id, Patient.workspace_id == ctx.workspace_id)
     )
@@ -44,6 +44,19 @@ async def _get_case_scoped(
     if not case:
         raise HTTPException(status_code=404, detail="Case not found.")
     return case
+
+
+async def _resolve_assigned_user_id(
+    db: AsyncSession, member_id: str, workspace_id: str
+) -> str | None:
+    result = await db.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.id == member_id,
+            WorkspaceMember.workspace_id == workspace_id,
+        )
+    )
+    member = result.scalar_one_or_none()
+    return member.user_id if member else None
 
 
 async def upload_scan_to_session(
@@ -79,15 +92,18 @@ async def create_case_from_session(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Patient not found in this workspace.")
 
+    assigned_to_user_id: str | None = None
     if assigned_to_member_id:
-        member = await db.execute(
+        member_result = await db.execute(
             select(WorkspaceMember).where(
                 WorkspaceMember.id == assigned_to_member_id,
                 WorkspaceMember.workspace_id == ctx.workspace_id,
             )
         )
-        if not member.scalar_one_or_none():
+        member = member_result.scalar_one_or_none()
+        if not member:
             raise HTTPException(status_code=404, detail="Assigned member not found in this workspace.")
+        assigned_to_user_id = member.user_id
 
     case_id = str(uuid.uuid4())
     full_session_id = f"{ctx.workspace_id}_{session_id}"
@@ -105,13 +121,14 @@ async def create_case_from_session(
         file_references=json.dumps(scan_paths),
         priority=priority,
         assigned_to_member_id=assigned_to_member_id,
+        assigned_to_user_id=assigned_to_user_id,
         notes=notes,
     )
     db.add(case)
     await db.commit()
     await db.refresh(case)
 
-    # Run ML pipeline synchronously before returning — rolls back on failure
+    # Run ML pipeline synchronously before returning - rolls back on failure
     case_dir = MRI_SCANS_DIR / case_id
     abs_paths = [case_dir / Path(p).name for p in scan_paths]
     try:
@@ -126,7 +143,9 @@ async def create_case_from_session(
         ) from exc
 
     result = await db.execute(
-        select(Case).options(joinedload(Case.patient)).where(Case.id == case.id)
+        select(Case)
+        .options(joinedload(Case.patient), joinedload(Case.assigned_to_user))
+        .where(Case.id == case.id)
     )
     case = result.scalar_one()
 
@@ -143,12 +162,12 @@ async def create_case_from_session(
 async def list_cases(db: AsyncSession, ctx: WorkspaceContext) -> list[Case]:
     query = (
         select(Case)
-        .options(joinedload(Case.patient))
+        .options(joinedload(Case.patient), joinedload(Case.assigned_to_user))
         .join(Patient, Case.patient_id == Patient.id)
         .where(Patient.workspace_id == ctx.workspace_id)
     )
     if ctx.role == WorkspaceRoleEnum.DOCTOR:
-        query = query.where(Case.assigned_to_member_id == ctx.member_id)
+        query = query.where(Case.assigned_to_user_id == ctx.user.id)
 
     result = await db.execute(query)
     return result.scalars().all()
@@ -180,16 +199,19 @@ async def create_case(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Patient not found in this workspace.")
 
-    # Validate assigned member
+    # Validate assigned member and capture user_id for stable reference
+    assigned_to_user_id: str | None = None
     if assigned_to_member_id:
-        member = await db.execute(
+        member_result = await db.execute(
             select(WorkspaceMember).where(
                 WorkspaceMember.id == assigned_to_member_id,
                 WorkspaceMember.workspace_id == ctx.workspace_id,
             )
         )
-        if not member.scalar_one_or_none():
+        member = member_result.scalar_one_or_none()
+        if not member:
             raise HTTPException(status_code=404, detail="Assigned member not found in this workspace.")
+        assigned_to_user_id = member.user_id
 
     # Save scans to local disk at app/db/mri_scans/{case_id}/
     case_id = str(uuid.uuid4())
@@ -220,13 +242,14 @@ async def create_case(
         file_references=json.dumps(scan_paths),
         priority=priority,
         assigned_to_member_id=assigned_to_member_id,
+        assigned_to_user_id=assigned_to_user_id,
         notes=notes,
     )
     db.add(case)
     await db.commit()
     await db.refresh(case)
 
-    # Run ML pipeline synchronously before returning — rolls back on failure
+    # Run ML pipeline synchronously before returning - rolls back on failure
     case_dir = MRI_SCANS_DIR / case_id
     abs_paths = [case_dir / Path(p).name for p in scan_paths]
     try:
@@ -240,10 +263,9 @@ async def create_case(
             detail=f"Case pipeline failed: {exc}. Please re-upload the scans.",
         ) from exc
 
-    # Reload with patient relationship so the router can serialize patient name
     result = await db.execute(
         select(Case)
-        .options(joinedload(Case.patient))
+        .options(joinedload(Case.patient), joinedload(Case.assigned_to_user))
         .where(Case.id == case.id)
     )
     case = result.scalar_one()
@@ -262,7 +284,7 @@ async def get_case(
     db: AsyncSession, case_id: str, ctx: WorkspaceContext
 ) -> Case:
     case = await _get_case_scoped(db, case_id, ctx)
-    if ctx.role == WorkspaceRoleEnum.DOCTOR and case.assigned_to_member_id != ctx.member_id:
+    if ctx.role == WorkspaceRoleEnum.DOCTOR and case.assigned_to_user_id != ctx.user.id:
         raise HTTPException(status_code=403, detail="You are not assigned to this case.")
     return case
 
@@ -273,7 +295,7 @@ async def update_case(
     case = await _get_case_scoped(db, case_id, ctx)
 
     if ctx.role == WorkspaceRoleEnum.DOCTOR:
-        if case.assigned_to_member_id != ctx.member_id:
+        if case.assigned_to_user_id != ctx.user.id:
             raise HTTPException(status_code=403, detail="You are not assigned to this case.")
         allowed = payload.model_dump(exclude_unset=True)
         forbidden = set(allowed.keys()) - {"verdict", "notes", "status"}
@@ -286,6 +308,16 @@ async def update_case(
     updates = payload.model_dump(exclude_unset=True)
     if "verdict" in updates:
         updates["verdict_updated_at"] = datetime.utcnow()
+
+    # When re-assigning, also update the stable user reference
+    if "assigned_to_member_id" in updates:
+        new_member_id = updates["assigned_to_member_id"]
+        if new_member_id:
+            updates["assigned_to_user_id"] = await _resolve_assigned_user_id(
+                db, new_member_id, ctx.workspace_id
+            )
+        else:
+            updates["assigned_to_user_id"] = None
 
     for field, value in updates.items():
         setattr(case, field, value)
@@ -320,7 +352,7 @@ async def get_stats(db: AsyncSession, ctx: WorkspaceContext) -> dict:
         .where(Patient.workspace_id == ctx.workspace_id)
     )
     if ctx.role == WorkspaceRoleEnum.DOCTOR:
-        base = base.where(Case.assigned_to_member_id == ctx.member_id)
+        base = base.where(Case.assigned_to_user_id == ctx.user.id)
 
     base = base.group_by(Case.status)
     result = await db.execute(base)
@@ -341,12 +373,12 @@ async def get_stats(db: AsyncSession, ctx: WorkspaceContext) -> dict:
 async def get_recent(db: AsyncSession, ctx: WorkspaceContext) -> list[Case]:
     query = (
         select(Case)
-        .options(joinedload(Case.patient))
+        .options(joinedload(Case.patient), joinedload(Case.assigned_to_user))
         .join(Patient, Case.patient_id == Patient.id)
         .where(Patient.workspace_id == ctx.workspace_id)
     )
     if ctx.role == WorkspaceRoleEnum.DOCTOR:
-        query = query.where(Case.assigned_to_member_id == ctx.member_id)
+        query = query.where(Case.assigned_to_user_id == ctx.user.id)
 
     query = query.order_by(Case.created_at.desc()).limit(5)
     result = await db.execute(query)

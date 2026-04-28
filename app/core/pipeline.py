@@ -37,9 +37,9 @@ _BRAIN_COLOR = (160, 160, 160, 80)
 
 # BraTS label → PNG overlay RGBA
 _SEG_OVERLAY: dict[int, tuple[int, int, int, int]] = {
-    1: (220,  40,  40, 180),   # necrotic core — red
-    2: (250, 200,  20, 180),   # edema — yellow
-    4: ( 59, 130, 246, 180),   # active tumor — blue
+    1: (220,  40,  40, 180),   # necrotic core - red
+    2: (250, 200,  20, 180),   # edema - yellow
+    4: ( 59, 130, 246, 180),   # active tumor - blue
 }
 
 # ---------------------------------------------------------------------------
@@ -79,7 +79,7 @@ async def _get_model() -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Step 1 — Segmentation inference
+# Step 1 - Segmentation inference
 # ---------------------------------------------------------------------------
 
 def _standardize(volume: "np.ndarray") -> "np.ndarray":  # type: ignore[name-defined]
@@ -131,7 +131,7 @@ def _run_inference_sync(
 
 
 # ---------------------------------------------------------------------------
-# Step 2 — 3-D mesh generation
+# Step 2 - 3-D mesh generation
 # ---------------------------------------------------------------------------
 
 def _apply_affine(affine: "np.ndarray", verts: "np.ndarray") -> "np.ndarray":  # type: ignore[name-defined]
@@ -183,7 +183,7 @@ def _generate_mesh_sync(
 
     scene = trimesh.Scene()
 
-    # Brain surface (all non-zero voxels — BraTS is skull-stripped)
+    # Brain surface (all non-zero voxels - BraTS is skull-stripped)
     if mod_data.max() > 0:
         brain_mask = ndimage.binary_fill_holes(mod_data > 0)
         brain_mesh = _mesh_from_mask(brain_mask, affine, _BRAIN_COLOR, step_size=2)
@@ -201,7 +201,7 @@ def _generate_mesh_sync(
 
 
 # ---------------------------------------------------------------------------
-# Step 3 — 2-D axial slice export
+# Step 3 - 2-D axial slice export
 # ---------------------------------------------------------------------------
 
 def _normalise(vol: "np.ndarray") -> "np.ndarray":  # type: ignore[name-defined]
@@ -281,7 +281,7 @@ async def run_case_pipeline(case_dir: Path, scan_paths: list[Path]) -> None:
     scan_paths must be ordered as [T1, T1ce, T2, FLAIR] (matching frontend
     MODALITY_ORDER = ["t1", "t1ce", "t2", "flair"]).
 
-    Raises on any step failure — callers should treat this as a hard error
+    Raises on any step failure - callers should treat this as a hard error
     and roll back the case record.
     """
     modality_map: dict[str, Path] = {

@@ -276,7 +276,7 @@ async def google_auth(
             detail="Incomplete profile from Google.",
         )
 
-    # 3. Look up by google_id (returning Google user — fastest path)
+    # 3. Look up by google_id (returning Google user - fastest path)
     result = await db.execute(select(User).where(User.google_id == google_sub))
     user = result.scalar_one_or_none()
 
@@ -296,7 +296,7 @@ async def google_auth(
             global_role=user.global_role,
         )
 
-    # 4. Check if a password account exists with the same email — link it silently
+    # 4. Check if a password account exists with the same email - link it silently
     result = await db.execute(select(User).where(User.email == email))
     existing_user = result.scalar_one_or_none()
 
@@ -321,7 +321,7 @@ async def google_auth(
             global_role=existing_user.global_role,
         )
 
-    # 5. No account found — new signup requires a role
+    # 5. No account found - new signup requires a role
     if not global_role:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

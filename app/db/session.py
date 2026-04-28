@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from app.core.config import settings
-from app.db.base import Base  # noqa: F401 — Alembic needs this
+from app.db.base import Base  # noqa: F401 - Alembic needs this
 
 # Supabase requires SSL + disabled prepared-statement cache (PgBouncer limitation).
 # Local Postgres needs neither.
