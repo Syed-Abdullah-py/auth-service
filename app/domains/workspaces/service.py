@@ -412,6 +412,44 @@ async def reject_invitation(
     return {"message": "Invitation rejected."}
 
 
+# ── Invitable Users ───────────────────────────────────────────────────────────
+
+async def search_invitable_users(
+    db: AsyncSession, workspace_id: str, q: str, ctx: WorkspaceContext
+) -> list[User]:
+    # Users already in the workspace
+    member_ids_result = await db.execute(
+        select(WorkspaceMember.user_id).where(WorkspaceMember.workspace_id == workspace_id)
+    )
+    member_ids = {row[0] for row in member_ids_result.all()}
+
+    # Emails already invited (pending)
+    invited_emails_result = await db.execute(
+        select(Invitation.email).where(Invitation.workspace_id == workspace_id)
+    )
+    invited_emails = {row[0] for row in invited_emails_result.all()}
+
+    query = select(User).where(User.id != ctx.user.id)
+
+    if member_ids:
+        query = query.where(User.id.notin_(member_ids))
+    if invited_emails:
+        query = query.where(User.email.notin_(invited_emails))
+
+    if q:
+        term = f"%{q.lower()}%"
+        from sqlalchemy import or_, func
+        query = query.where(
+            or_(
+                func.lower(User.email).like(term),
+                func.lower(User.name).like(term),
+            )
+        )
+
+    result = await db.execute(query.limit(20))
+    return result.scalars().all()
+
+
 # ── Join Requests ─────────────────────────────────────────────────────────────
 
 @alru_cache(maxsize=256, ttl=300)

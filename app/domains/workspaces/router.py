@@ -13,6 +13,7 @@ from app.domains.workspaces import service
 from app.domains.workspaces.schemas import (
     InvitationCreate,
     InvitationResponse,
+    InvitableUserResponse,
     JoinRequestResponse,
     MemberResponse,
     MessageResponse,
@@ -193,6 +194,21 @@ async def reject_invitation(
     db: AsyncSession = Depends(get_db),
 ):
     return await service.reject_invitation(db, invitation_id, current_user)
+
+
+# ── Invitable Users ───────────────────────────────────────────────────────────
+
+
+@router.get("/{workspace_id}/invitable-users", response_model=list[InvitableUserResponse])
+async def search_invitable_users(
+    workspace_id: str,
+    q: str = "",
+    ctx: WorkspaceContext = Depends(
+        require_workspace_role(WorkspaceRoleEnum.ADMIN, WorkspaceRoleEnum.OWNER)
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    return await service.search_invitable_users(db, workspace_id, q, ctx)
 
 
 # ── Join Requests ─────────────────────────────────────────────────────────────
