@@ -76,5 +76,15 @@ class JoinRequestResponse(BaseModel):
         from_attributes = True
 
 
+class InvitableUserResponse(BaseModel):
+    id: str
+    email: str
+    name: str | None = None
+    global_role: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
 class MessageResponse(BaseModel):
     message: str
