@@ -7,7 +7,9 @@ import app.models  # noqa: F401 - registers all models with Base.metadata
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep existing app/server loggers (e.g. uvicorn.access) enabled when
+    # Alembic configures its own logging handlers.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 target_metadata = Base.metadata
