@@ -2,11 +2,11 @@
 
 run:
 	docker compose up postgres -d --wait
-	uvicorn main:app --host 0.0.0.0 --reload
+	docker compose up --build auth-service
 
 run-https:
 	docker compose up postgres -d --wait
-	uvicorn main:app --host 0.0.0.0 --reload --ssl-keyfile certificates/key.pem --ssl-certfile certificates/cert.pem
+	docker compose up --build auth-service
 
 stop:
 	docker compose down

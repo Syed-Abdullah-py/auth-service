@@ -123,6 +123,7 @@ async def create_case_from_session(
         assigned_to_member_id=assigned_to_member_id,
         assigned_to_user_id=assigned_to_user_id,
         notes=notes,
+        status=CaseStatusEnum.PROCESSING,
     )
     db.add(case)
     await db.commit()
@@ -141,6 +142,9 @@ async def create_case_from_session(
             status_code=500,
             detail=f"Case pipeline failed: {exc}. Please re-upload the scans.",
         ) from exc
+
+    case.status = CaseStatusEnum.PENDING
+    await db.commit()
 
     result = await db.execute(
         select(Case)
@@ -244,6 +248,7 @@ async def create_case(
         assigned_to_member_id=assigned_to_member_id,
         assigned_to_user_id=assigned_to_user_id,
         notes=notes,
+        status=CaseStatusEnum.PROCESSING,
     )
     db.add(case)
     await db.commit()
@@ -262,6 +267,9 @@ async def create_case(
             status_code=500,
             detail=f"Case pipeline failed: {exc}. Please re-upload the scans.",
         ) from exc
+
+    case.status = CaseStatusEnum.PENDING
+    await db.commit()
 
     result = await db.execute(
         select(Case)
