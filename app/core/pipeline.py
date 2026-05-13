@@ -341,6 +341,8 @@ def _generate_slices_sync(
     seg_path: Path,
     output_dir: Path,
 ) -> None:
+    import zipfile
+    import shutil
     import numpy as np
     import nibabel as nib
 
@@ -356,6 +358,13 @@ def _generate_slices_sync(
             seg_sl = _axial_slice(seg_vol, i)
             _save_clean(mri_sl, mod_dir / f"{i:03d}.png")
             _save_masked(mri_sl, seg_sl, mod_dir / f"{i:03d}_m.png")
+
+        # Pack all PNGs for this modality into a single ZIP archive, then remove the directory.
+        zip_path = output_dir / f"{modality}.zip"
+        with zipfile.ZipFile(str(zip_path), "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+            for png_file in sorted(mod_dir.iterdir()):
+                zf.write(str(png_file), png_file.name)
+        shutil.rmtree(str(mod_dir))
 
 
 # ---------------------------------------------------------------------------

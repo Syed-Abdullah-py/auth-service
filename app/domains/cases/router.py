@@ -169,7 +169,6 @@ async def serve_scan(
 
 
 _VALID_MODALITIES = {"t1", "t1ce", "t2", "flair"}
-_TOTAL_SLICES = 155
 
 
 @router.get("/{case_id}/mesh")
@@ -220,12 +219,10 @@ async def serve_seg(
     )
 
 
-@router.get("/{case_id}/slices/{modality}/{index}")
-async def serve_slice(
+@router.get("/{case_id}/slices/{modality}/zip")
+async def serve_slice_zip(
     case_id: str,
     modality: str,
-    index: int,
-    masked: bool = False,
     ctx: WorkspaceContext = Depends(
         require_workspace_role(
             WorkspaceRoleEnum.DOCTOR,
@@ -237,16 +234,14 @@ async def serve_slice(
 ):
     if modality not in _VALID_MODALITIES:
         raise HTTPException(status_code=400, detail=f"Invalid modality '{modality}'. Must be one of {_VALID_MODALITIES}.")
-    if index < 0 or index >= _TOTAL_SLICES:
-        raise HTTPException(status_code=400, detail=f"Slice index must be 0–{_TOTAL_SLICES - 1}.")
     await service.get_case(db, case_id, ctx)
-    suffix = "_m" if masked else ""
-    path = MRI_SCANS_DIR / case_id / "slices" / modality / f"{index:03d}{suffix}.png"
+    path = MRI_SCANS_DIR / case_id / "slices" / f"{modality}.zip"
     if not path.exists():
-        raise HTTPException(status_code=404, detail="Slice not found.")
+        raise HTTPException(status_code=404, detail="Slice archive not found.")
     return FileResponse(
         str(path),
-        media_type="image/png",
+        media_type="application/zip",
+        filename=f"{modality}.zip",
         headers={"Cache-Control": "private, max-age=86400"},
     )
 
