@@ -6,6 +6,7 @@ Steps:
   1. Segmentation inference   → seg.nii
   2. 3-D brain mesh generation → mesh.glb
   3. Axial PNG slice export    → slices/{modality}/{idx:03d}.png + {idx:03d}_m.png
+  4. Survival prediction       → "Short" | "Mid" | "Long" (returned, stored on Case)
 
 Modality index convention (matches frontend MODALITY_ORDER):
   scan_paths[0] = T1
@@ -25,7 +26,8 @@ from typing import Any
 # Constants
 # ---------------------------------------------------------------------------
 
-MODEL_PATH = Path(__file__).parent.parent / "nnunet" / "3d_model.h5"
+MODEL_PATH          = Path(__file__).parent.parent / "nnunet" / "3d_model.h5"
+SURVIVAL_MODEL_PATH = Path(__file__).parent.parent / "nnunet" / "survival_predictor_model.joblib"
 
 # BraTS label → RGBA
 _TUMOR_LABELS: dict[str, tuple[int, tuple[int, int, int, int]]] = {
@@ -48,6 +50,9 @@ _SEG_OVERLAY: dict[int, tuple[int, int, int, int]] = {
 
 _model: Any = None
 _model_lock = asyncio.Lock()
+
+_survival_model: Any = None
+_survival_model_lock = asyncio.Lock()
 
 
 def _load_model_sync() -> Any:
@@ -76,6 +81,89 @@ async def _get_model() -> Any:
         if _model is None:
             _model = await asyncio.to_thread(_load_model_sync)
     return _model
+
+
+def _load_survival_model_sync() -> Any:
+    import joblib
+    return joblib.load(str(SURVIVAL_MODEL_PATH))
+
+
+async def _get_survival_model() -> Any:
+    global _survival_model
+    async with _survival_model_lock:
+        if _survival_model is None:
+            _survival_model = await asyncio.to_thread(_load_survival_model_sync)
+    return _survival_model
+
+
+# ---------------------------------------------------------------------------
+# Step 4 - Survival prediction
+# ---------------------------------------------------------------------------
+
+def _run_survival_prediction_sync(
+    payload: Any,
+    seg_path: Path,
+    flair_path: Path,
+    patient_age: float,
+) -> str | None:
+    """
+    Extract 26 features from seg + FLAIR, run the full survival model.
+    Falls back to the tabular-only pipeline (3 features) if MRI extraction fails.
+    Returns "Short", "Mid", or "Long". Returns None only if both paths fail.
+    """
+    import numpy as np
+    import nibabel as nib
+
+    label_map = {0: "Short", 1: "Mid", 2: "Long"}
+
+    # --- MRI feature extraction (mirrors train_survival_predictor.py) ---
+    mri_features: list[float] | None = None
+    try:
+        seg_data   = nib.load(str(seg_path)).get_fdata()
+        flair_data = nib.load(str(flair_path)).get_fdata()
+
+        v1, v2, v4 = float(np.sum(seg_data == 1)), float(np.sum(seg_data == 2)), float(np.sum(seg_data == 4))
+        total_v    = v1 + v2 + v4
+
+        if total_v > 0:
+            r1, r2, r4   = v1 / total_v, v2 / total_v, v4 / total_v
+            coords        = np.argwhere(seg_data > 0)
+            centroid      = coords.mean(axis=0)
+            bbox_size     = coords.max(axis=0) - coords.min(axis=0)
+            rel_centroid  = centroid / np.array(seg_data.shape)
+            compactness   = total_v / (float(np.prod(bbox_size)) if np.prod(bbox_size) > 0 else 1.0)
+            tumor_px      = flair_data[seg_data > 0]
+            i_p           = np.percentile(tumor_px, [5, 10, 25, 50, 75, 90, 95])
+            mri_features  = [
+                v1, v2, v4, total_v, r1, r2, r4,
+                float(rel_centroid[0]), float(rel_centroid[1]), float(rel_centroid[2]),
+                float(bbox_size[0]), float(bbox_size[1]), float(bbox_size[2]),
+                compactness,
+                float(np.mean(tumor_px)), float(np.std(tumor_px)),
+                float(i_p[0]), float(i_p[1]), float(i_p[2]), float(i_p[3]),
+                float(i_p[4]), float(i_p[5]), float(i_p[6]),
+            ]
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Survival MRI extraction failed: %s", exc)
+
+    # Grade=HGG(1), Resection=NA(0) — baked-in defaults
+    tabular = [patient_age, 1.0, 0.0]
+
+    full_pipeline   = payload.get("pipeline")
+    tabular_pipeline = payload.get("tabular_pipeline")
+
+    if mri_features is not None and full_pipeline is not None:
+        X = np.array([tabular + mri_features], dtype=float)
+        pred = int(full_pipeline.predict(X)[0])
+        return label_map.get(pred)
+
+    if tabular_pipeline is not None:
+        X = np.array([tabular], dtype=float)
+        pred = int(tabular_pipeline.predict(X)[0])
+        return label_map.get(pred)
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -274,15 +362,21 @@ def _generate_slices_sync(
 # Public entry point
 # ---------------------------------------------------------------------------
 
-async def run_case_pipeline(case_dir: Path, scan_paths: list[Path]) -> None:
+async def run_case_pipeline(
+    case_dir: Path,
+    scan_paths: list[Path],
+    patient_age: float,
+) -> str | None:
     """
-    Run the full 3-step ML pipeline for a case.
+    Run the full 4-step ML pipeline for a case.
 
     scan_paths must be ordered as [T1, T1ce, T2, FLAIR] (matching frontend
     MODALITY_ORDER = ["t1", "t1ce", "t2", "flair"]).
 
-    Raises on any step failure - callers should treat this as a hard error
-    and roll back the case record.
+    Steps 1-3 raise on failure — callers should roll back the case record.
+    Step 4 (survival prediction) never raises; returns None if it cannot run.
+
+    Returns the survival prediction label: "Short", "Mid", "Long", or None.
     """
     modality_map: dict[str, Path] = {
         "flair": scan_paths[3],
@@ -295,7 +389,31 @@ async def run_case_pipeline(case_dir: Path, scan_paths: list[Path]) -> None:
     mesh_path  = case_dir / "mesh.glb"
     slices_dir = case_dir / "slices"
 
+    # Steps 1-3: raises on failure
     model = await _get_model()
     await asyncio.to_thread(_run_inference_sync, model, modality_map, seg_path)
     await asyncio.to_thread(_generate_mesh_sync, modality_map["flair"], seg_path, mesh_path)
     await asyncio.to_thread(_generate_slices_sync, modality_map, seg_path, slices_dir)
+
+    # Step 4: survival prediction — soft failure, never breaks the pipeline
+    survival_prediction: str | None = None
+    try:
+        if SURVIVAL_MODEL_PATH.exists():
+            payload = await _get_survival_model()
+            survival_prediction = await asyncio.to_thread(
+                _run_survival_prediction_sync,
+                payload,
+                seg_path,
+                modality_map["flair"],
+                patient_age,
+            )
+        else:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Survival model not found at %s — skipping prediction.", SURVIVAL_MODEL_PATH
+            )
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Survival prediction failed: %s", exc)
+
+    return survival_prediction

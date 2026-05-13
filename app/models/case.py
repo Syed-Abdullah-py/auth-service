@@ -35,6 +35,8 @@ class Case(Base):
     verdict_updated_at = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
 
+    survival_prediction = Column(String, nullable=True)  # Short | Mid | Long
+
     patient_id = Column(String, ForeignKey("patients.id"), nullable=False)
     assigned_to_member_id = Column(
         String, ForeignKey("workspace_members.id"), nullable=True
