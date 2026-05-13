@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from async_lru import alru_cache
@@ -89,8 +89,10 @@ async def create_case_from_session(
     result = await db.execute(
         select(Patient).where(Patient.id == patient_id, Patient.workspace_id == ctx.workspace_id)
     )
-    if not result.scalar_one_or_none():
+    patient = result.scalar_one_or_none()
+    if not patient:
         raise HTTPException(status_code=404, detail="Patient not found in this workspace.")
+    patient_age = (date.today() - patient.dob).days / 365.25
 
     assigned_to_user_id: str | None = None
     if assigned_to_member_id:
@@ -133,7 +135,7 @@ async def create_case_from_session(
     case_dir = MRI_SCANS_DIR / case_id
     abs_paths = [case_dir / Path(p).name for p in scan_paths]
     try:
-        await run_case_pipeline(case_dir, abs_paths)
+        survival_prediction = await run_case_pipeline(case_dir, abs_paths, patient_age)
     except Exception as exc:
         await db.delete(case)
         await db.commit()
@@ -144,6 +146,7 @@ async def create_case_from_session(
         ) from exc
 
     case.status = CaseStatusEnum.PENDING
+    case.survival_prediction = survival_prediction
     await db.commit()
 
     result = await db.execute(
@@ -200,8 +203,10 @@ async def create_case(
             Patient.workspace_id == ctx.workspace_id,
         )
     )
-    if not result.scalar_one_or_none():
+    patient = result.scalar_one_or_none()
+    if not patient:
         raise HTTPException(status_code=404, detail="Patient not found in this workspace.")
+    patient_age = (date.today() - patient.dob).days / 365.25
 
     # Validate assigned member and capture user_id for stable reference
     assigned_to_user_id: str | None = None
@@ -258,7 +263,7 @@ async def create_case(
     case_dir = MRI_SCANS_DIR / case_id
     abs_paths = [case_dir / Path(p).name for p in scan_paths]
     try:
-        await run_case_pipeline(case_dir, abs_paths)
+        survival_prediction = await run_case_pipeline(case_dir, abs_paths, patient_age)
     except Exception as exc:
         await db.delete(case)
         await db.commit()
@@ -269,6 +274,7 @@ async def create_case(
         ) from exc
 
     case.status = CaseStatusEnum.PENDING
+    case.survival_prediction = survival_prediction
     await db.commit()
 
     result = await db.execute(

@@ -19,6 +19,7 @@ class CaseResponse(BaseModel):
     verdict: str | None = None
     verdict_updated_at: datetime | None = None
     notes: str | None = None
+    survival_prediction: str | None = None
     patient_id: str
     patient_first_name: str | None = None
     patient_last_name: str | None = None
@@ -42,6 +43,7 @@ class CaseResponse(BaseModel):
             verdict=case.verdict,
             verdict_updated_at=case.verdict_updated_at,
             notes=case.notes,
+            survival_prediction=case.survival_prediction,
             patient_id=case.patient_id,
             patient_first_name=case.patient.first_name if case.patient else None,
             patient_last_name=case.patient.last_name if case.patient else None,
