@@ -26,7 +26,7 @@ from typing import Any
 # Constants
 # ---------------------------------------------------------------------------
 
-MODEL_PATH          = Path(__file__).parent.parent / "nnunet" / "3d_model.h5"
+MODEL_PATH          = Path(__file__).parent.parent / "nnunet" / "3dunet_75_epoch.h5"
 SURVIVAL_MODEL_PATH = Path(__file__).parent.parent / "nnunet" / "survival_predictor_model.joblib"
 
 # BraTS label → RGBA
@@ -56,23 +56,96 @@ _survival_model_lock = asyncio.Lock()
 
 
 def _load_model_sync() -> Any:
+    """Build the Attention ResU-Net in float32 then load weights from the .h5.
+
+    load_model() restores the dtype of every layer from the saved config, which
+    can be float16 if the model was ever compiled with mixed_float16 policy.
+    MaxPool3D has no float16 kernel on CPU, causing an OpKernel error at
+    inference time.  Rebuilding the graph ourselves under the float32 policy
+    and calling load_weights() (weights-only, no architecture config) bypasses
+    that entirely.
+    """
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
-    import keras.backend as K  # noqa: F401 (needed for custom_objects)
-    from keras.models import load_model
-
-    def dice_coef(y_true: Any, y_pred: Any, epsilon: float = 1e-5) -> Any:
-        axis = (0, 1, 2, 3)
-        num = 2.0 * K.sum(y_true * y_pred, axis=axis) + epsilon
-        den = K.sum(y_true * y_true, axis=axis) + K.sum(y_pred * y_pred, axis=axis) + epsilon
-        return K.mean(num / den)
-
-    def dice_coef_loss(y_true: Any, y_pred: Any) -> Any:
-        return 1 - dice_coef(y_true, y_pred)
-
-    return load_model(
-        str(MODEL_PATH),
-        custom_objects={"dice_coef_loss": dice_coef_loss, "dice_coef": dice_coef},
+    import tensorflow as tf
+    from tensorflow.keras import mixed_precision
+    from tensorflow.keras.layers import (
+        Layer, Input, Conv3D, Conv3DTranspose, MaxPooling3D,
+        Activation, Dropout, Add, Multiply, concatenate,
     )
+    from tensorflow.keras.models import Model
+
+    # Must be set before any layer is constructed.
+    mixed_precision.set_global_policy("float32")
+
+    # ------------------------------------------------------------------
+    # Custom layer
+    # ------------------------------------------------------------------
+    class InstanceNorm3D(Layer):
+        def __init__(self, epsilon: float = 1e-5, **kwargs: Any) -> None:
+            super().__init__(**kwargs)
+            self.epsilon = epsilon
+
+        def build(self, input_shape: Any) -> None:
+            C = input_shape[-1]
+            self.gamma = self.add_weight(name="gamma", shape=(C,), initializer="ones",  trainable=True)
+            self.beta  = self.add_weight(name="beta",  shape=(C,), initializer="zeros", trainable=True)
+            super().build(input_shape)
+
+        def call(self, x: Any) -> Any:
+            mean, var = tf.nn.moments(x, axes=[1, 2, 3], keepdims=True)
+            return (x - mean) / tf.sqrt(var + self.epsilon) * self.gamma + self.beta
+
+        def get_config(self) -> dict:
+            cfg = super().get_config()
+            cfg["epsilon"] = self.epsilon
+            return cfg
+
+    # ------------------------------------------------------------------
+    # Architecture helpers (identical to training notebook)
+    # ------------------------------------------------------------------
+    def _res_block(x: Any, filters: int, prefix: str) -> Any:
+        shortcut = x
+        x = Conv3D(filters, 3, padding="same", use_bias=False, name=f"{prefix}_c1")(x)
+        x = InstanceNorm3D(name=f"{prefix}_in1")(x)
+        x = Activation("relu", name=f"{prefix}_r1")(x)
+        x = Conv3D(filters, 3, padding="same", use_bias=False, name=f"{prefix}_c2")(x)
+        x = InstanceNorm3D(name=f"{prefix}_in2")(x)
+        if shortcut.shape[-1] != filters:
+            shortcut = Conv3D(filters, 1, padding="same", use_bias=False, name=f"{prefix}_proj")(shortcut)
+            shortcut = InstanceNorm3D(name=f"{prefix}_proj_in")(shortcut)
+        x = Add(name=f"{prefix}_add")([x, shortcut])
+        return Activation("relu", name=f"{prefix}_r2")(x)
+
+    def _attn_gate(g: Any, s: Any, filters: int, prefix: str) -> Any:
+        Wg  = Conv3D(filters, 1, padding="same", use_bias=True, name=f"{prefix}_Wg")(g)
+        Ws  = Conv3D(filters, 1, padding="same", use_bias=True, name=f"{prefix}_Ws")(s)
+        psi = Activation("relu", name=f"{prefix}_relu")(Add(name=f"{prefix}_add")([Wg, Ws]))
+        psi = Conv3D(1, 1, padding="same", use_bias=True, name=f"{prefix}_psi")(psi)
+        psi = Activation("sigmoid", name=f"{prefix}_sig")(psi)
+        return Multiply(name=f"{prefix}_mul")([s, psi])
+
+    def _build(n_filters: int = 32, num_classes: int = 4, dropout: float = 0.1) -> Any:
+        inp = Input(shape=(128, 128, 128, 4), name="input")
+        e1 = _res_block(inp, n_filters,      "enc1");  p1 = MaxPooling3D((2,2,2), name="pool1")(e1)
+        e2 = _res_block(p1,  n_filters * 2,  "enc2");  p2 = MaxPooling3D((2,2,2), name="pool2")(e2)
+        e3 = _res_block(p2,  n_filters * 4,  "enc3");  p3 = MaxPooling3D((2,2,2), name="pool3")(e3)
+        e4 = _res_block(p3,  n_filters * 8,  "enc4");  p4 = MaxPooling3D((2,2,2), name="pool4")(e4)
+        b  = _res_block(p4,  n_filters * 16, "bottleneck")
+        b  = Dropout(dropout, name="bn_drop")(b)
+        u4 = Conv3DTranspose(n_filters * 8, (2,2,2), strides=(2,2,2), padding="same", name="up4")(b)
+        d4 = _res_block(concatenate([u4, _attn_gate(u4, e4, n_filters * 8, "attn4")], name="cat4"), n_filters * 8,  "dec4")
+        u3 = Conv3DTranspose(n_filters * 4, (2,2,2), strides=(2,2,2), padding="same", name="up3")(d4)
+        d3 = _res_block(concatenate([u3, _attn_gate(u3, e3, n_filters * 4, "attn3")], name="cat3"), n_filters * 4,  "dec3")
+        u2 = Conv3DTranspose(n_filters * 2, (2,2,2), strides=(2,2,2), padding="same", name="up2")(d3)
+        d2 = _res_block(concatenate([u2, _attn_gate(u2, e2, n_filters * 2, "attn2")], name="cat2"), n_filters * 2,  "dec2")
+        u1 = Conv3DTranspose(n_filters * 1, (2,2,2), strides=(2,2,2), padding="same", name="up1")(d2)
+        d1 = _res_block(concatenate([u1, _attn_gate(u1, e1, n_filters * 1, "attn1")], name="cat1"), n_filters * 1,  "dec1")
+        out = Conv3D(num_classes, 1, activation="softmax", dtype="float32", name="output")(d1)
+        return Model(inputs=inp, outputs=out, name="Attention_ResUNet_3D")
+
+    model = _build()
+    model.load_weights(str(MODEL_PATH))
+    return model
 
 
 async def _get_model() -> Any:
