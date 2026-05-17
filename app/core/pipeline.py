@@ -26,7 +26,7 @@ from typing import Any
 # Constants
 # ---------------------------------------------------------------------------
 
-MODEL_PATH          = Path(__file__).parent.parent / "nnunet" / "3dunet_75_epoch.h5"
+MODEL_PATH          = Path(__file__).parent.parent / "nnunet" / "3dunet_84_epoch.h5"
 SURVIVAL_MODEL_PATH = Path(__file__).parent.parent / "nnunet" / "survival_predictor_model.joblib"
 
 # BraTS label → RGBA

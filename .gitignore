@@ -8,4 +8,4 @@ uploads
 .gitignore
 .venv
 app/db/mri_scans/*
-app/nnunet/3dunet_75_epoch.h5
+app/nnunet/3dunet_84_epoch.h5
