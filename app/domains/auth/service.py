@@ -1,9 +1,12 @@
 # app/domains/auth/service.py
 import logging
 import random
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from fastapi import HTTPException, status
 import time
 import httpx
+import aiosmtplib
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
@@ -27,9 +30,37 @@ def _generate_otp() -> str:
     return str(random.randint(100000, 999999))
 
 
-def _send_otp(email: str, otp: str) -> None:
-    logger.warning("[DEV ONLY] OTP for %s: %s", email, otp)
-    print(f"\n  *** OTP for {email}: {otp} ***\n", flush=True)
+async def _send_otp(email: str, otp: str) -> None:
+    if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
+        logger.warning("[DEV ONLY] SMTP not configured. OTP for %s: %s", email, otp)
+        print(f"\n  *** OTP for {email}: {otp} ***\n", flush=True)
+        return
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Your NeuroScan verification code"
+    msg["From"] = settings.SMTP_FROM or settings.SMTP_USER
+    msg["To"] = email
+
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px">
+      <h2 style="color:#111827;margin-bottom:8px">NeuroScan</h2>
+      <p style="color:#6b7280;margin-bottom:24px">Use the code below to verify your account. It expires in 10 minutes.</p>
+      <div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:24px;text-align:center">
+        <span style="font-size:36px;font-weight:700;letter-spacing:8px;color:#111827">{otp}</span>
+      </div>
+      <p style="color:#9ca3af;font-size:12px;margin-top:24px">If you did not request this, you can safely ignore this email.</p>
+    </div>
+    """
+    msg.attach(MIMEText(html, "html"))
+
+    await aiosmtplib.send(
+        msg,
+        hostname=settings.SMTP_HOST,
+        port=settings.SMTP_PORT,
+        username=settings.SMTP_USER,
+        password=settings.SMTP_PASSWORD,
+        start_tls=True,
+    )
 
 
 async def register(db: AsyncSession, payload: RegisterRequest) -> RegisterResponse:
@@ -81,7 +112,7 @@ async def register(db: AsyncSession, payload: RegisterRequest) -> RegisterRespon
     await db.refresh(pending)
     print(f"[DEBUG] DB Commit & Refresh: {time.time() - t_start:.4f}s")
     
-    _send_otp(pending.email, otp)
+    await _send_otp(pending.email, otp)
 
     print(f"[DEBUG] TOTAL Register Time: {time.time() - t0:.4f}s")
     return RegisterResponse(
@@ -177,7 +208,7 @@ async def resend_otp(db: AsyncSession, email: str) -> dict:
     await db.commit()
     print(f"[DEBUG] resend_otp - DB Commit: {time.time() - t_start:.4f}s")
     
-    _send_otp(pending.email, otp)
+    await _send_otp(pending.email, otp)
     print(f"[DEBUG] TOTAL resend_otp Time: {time.time() - t0:.4f}s")
     return {"message": "OTP resent successfully."}
 

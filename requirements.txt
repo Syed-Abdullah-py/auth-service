@@ -14,6 +14,7 @@ alembic==1.14.0
 psycopg2-binary==2.9.9
 bcrypt==3.2.2
 httpx==0.27.0
+aiosmtplib==3.0.1
 async-lru==2.0.4
 # ML pipeline
 tensorflow>=2.15,<3
